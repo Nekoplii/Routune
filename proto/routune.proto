@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package routune;
+
+service RoutuneDaemon {
+  rpc GetDaemonStatus (Empty) returns (DaemonStatusResponse);
+  rpc StreamTelemetry (TelemetryRequest) returns (stream TelemetryChunk);
+  rpc ApplyRoutingGraph (RoutingGraphMessage) returns (CommandResponse);
+}
+
+message Empty {}
+
+message DaemonStatusResponse {
+  bool active = 1;
+  string version = 2;
+  uint32 active_routes = 3;
+}
+
+message TelemetryRequest {
+  uint32 update_interval_ms = 1;
+}
+
+message TelemetryChunk {
+  float peak_volume_db = 1;
+  float rms_volume_db = 2;
+  repeated float spectrum_magnitudes = 3;
+}
+
+message RoutingGraphMessage {
+  string graph_json = 1;
+}
+
+message CommandResponse {
+  bool success = 1;
+  string message = 2;
+}
