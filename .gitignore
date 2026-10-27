@@ -1,0 +1,20 @@
+# Rust
+/target/
+Cargo.lock
+
+# Node / Vite
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Tauri build artifacts
+routune-gui/src-tauri/target/
+routune-gui/src-tauri/gen/
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/

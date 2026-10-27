@@ -1,0 +1,23 @@
+[workspace]
+resolver = "2"
+members = [
+    "routune-core",
+    "routune-daemon",
+    "routune-gui/src-tauri",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+authors = ["Routune Team"]
+license = "GPL-3.0-only"
+
+[workspace.dependencies]
+routune-core = { path = "routune-core" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0"
+anyhow = "1.0"
+tokio = { version = "1.40", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
