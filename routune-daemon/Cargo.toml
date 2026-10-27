@@ -8,9 +8,18 @@ license.workspace = true
 name = "routune-daemon"
 path = "src/main.rs"
 
+[build-dependencies]
+tonic-build.workspace = true
+
 [dependencies]
 routune-core.workspace = true
 tokio.workspace = true
+tokio-stream.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 anyhow.workspace = true
+cpal.workspace = true
+rtrb.workspace = true
+tonic.workspace = true
+tonic-web.workspace = true
+prost.workspace = true
