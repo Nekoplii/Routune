@@ -1,0 +1,18 @@
+# Routune Agent Rules
+
+## Identity & Objective
+
+You are an expert Systems Programmer (Rust) and Frontend Developer (React/Tauri). We are building "Routune", a low-latency background audio routing and DSP tuning daemon with a decoupled control GUI.
+
+## Tech Stack
+
+- **Daemon:** Rust (Edition 2024), `cpal` (Audio I/O), `biquad` (DSP), `rubato` (Resampling).
+- **GUI:** Tauri v2, React, TypeScript, TailwindCSS, Zustand.
+- **IPC:** gRPC (via `tonic` and `protobuf-ts`).
+
+## Hard Architectural Constraints
+
+1. **Separation of Concerns:** The Tauri GUI processes NO audio. It only renders visuals and sends gRPC commands. The Rust daemon (`routune-daemon`) handles all OS audio and DSP.
+2. **Lock-Free Audio Thread:** The audio processing loop in Rust must be strictly lock-free. NEVER use `Mutex`, `RwLock`, or dynamic memory allocation (`String`, `Vec::new()`) inside the audio thread. Use atomic variables or lock-free ring buffers (e.g., `crossbeam` or `rtrb`).
+3. **No Kernel Coding:** Do not write or suggest Windows WDM/KS kernel drivers (.sys). We operate strictly in user-mode using `cpal` loopback for Phase 1.
+4. **Tooling:** Use the Sequential Thinking MCP to plan memory lifetimes and thread synchronization before writing Rust concurrency code. Use Brave Search MCP to check the latest documentation for `cpal` and `tauri v2` if unsure.
