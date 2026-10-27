@@ -1,0 +1,18 @@
+[package]
+name = "routune-gui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "routune_gui_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+routune-core.workspace = true
+tauri = { version = "2", features = [] }
+serde.workspace = true
+serde_json.workspace = true
