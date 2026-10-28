@@ -5,12 +5,17 @@
   "license": "GPL-3.0-only",
   "type": "module",
   "scripts": {
+    "proto:generate": "protoc --ts_out src/proto --proto_path ../proto ../proto/routune.proto",
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri"
   },
   "dependencies": {
+    "@protobuf-ts/grpcweb-transport": "^2.11.1",
+    "@protobuf-ts/plugin": "^2.11.1",
+    "@protobuf-ts/runtime": "^2.11.1",
+    "@protobuf-ts/runtime-rpc": "^2.11.1",
     "@tauri-apps/api": "^2.0.0",
     "clsx": "^2.1.1",
     "lucide-react": "^0.474.0",
