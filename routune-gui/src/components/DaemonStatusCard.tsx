@@ -38,7 +38,7 @@ export function DaemonStatusCard() {
               isAudioActive ? "text-emerald-400" : "text-amber-400"
             }`}
           >
-            {isAudioActive ? "WASAPI Capturing" : "Idle / No Stream"}
+            {isAudioActive ? "PipeWire / Audio Active" : "Idle / No Stream"}
           </span>
         </div>
         <div className="flex justify-between border-b border-neutral-800/60 pb-1.5">

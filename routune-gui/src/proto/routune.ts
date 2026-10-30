@@ -47,6 +47,82 @@ export interface TelemetryRequest {
     targetFps: number;
 }
 /**
+ * @generated from protobuf message routune.SinkMetric
+ */
+export interface SinkMetric {
+    /**
+     * @generated from protobuf field: string sink_id = 1
+     */
+    sinkId: string;
+    /**
+     * @generated from protobuf field: string sink_name = 2
+     */
+    sinkName: string;
+    /**
+     * @generated from protobuf field: float peak_volume_db = 3
+     */
+    peakVolumeDb: number;
+    /**
+     * @generated from protobuf field: float rms_volume_db = 4
+     */
+    rmsVolumeDb: number;
+}
+/**
+ * @generated from protobuf message routune.GraphNodeInfo
+ */
+export interface GraphNodeInfo {
+    /**
+     * @generated from protobuf field: string id = 1
+     */
+    id: string;
+    /**
+     * @generated from protobuf field: string name = 2
+     */
+    name: string;
+    /**
+     * @generated from protobuf field: string node_type = 3
+     */
+    nodeType: string;
+    /**
+     * @generated from protobuf field: bool bypassed = 4
+     */
+    bypassed: boolean;
+    /**
+     * @generated from protobuf field: float peak_volume_db = 5
+     */
+    peakVolumeDb: number;
+    /**
+     * @generated from protobuf field: float rms_volume_db = 6
+     */
+    rmsVolumeDb: number;
+}
+/**
+ * @generated from protobuf message routune.GraphEdgeInfo
+ */
+export interface GraphEdgeInfo {
+    /**
+     * @generated from protobuf field: string from_node = 1
+     */
+    fromNode: string;
+    /**
+     * @generated from protobuf field: string to_node = 2
+     */
+    toNode: string;
+}
+/**
+ * @generated from protobuf message routune.GraphTopology
+ */
+export interface GraphTopology {
+    /**
+     * @generated from protobuf field: repeated routune.GraphNodeInfo nodes = 1
+     */
+    nodes: GraphNodeInfo[];
+    /**
+     * @generated from protobuf field: repeated routune.GraphEdgeInfo edges = 2
+     */
+    edges: GraphEdgeInfo[];
+}
+/**
  * @generated from protobuf message routune.AudioTelemetry
  */
 export interface AudioTelemetry {
@@ -66,6 +142,14 @@ export interface AudioTelemetry {
      * @generated from protobuf field: uint64 sequence_number = 4
      */
     sequenceNumber: string;
+    /**
+     * @generated from protobuf field: repeated routune.SinkMetric sink_metrics = 5
+     */
+    sinkMetrics: SinkMetric[];
+    /**
+     * @generated from protobuf field: routune.GraphTopology topology = 6
+     */
+    topology?: GraphTopology;
 }
 // @generated message type with reflection information, may provide speed optimized methods
 class PingRequest$Type extends MessageType<PingRequest> {
@@ -225,13 +309,283 @@ class TelemetryRequest$Type extends MessageType<TelemetryRequest> {
  */
 export const TelemetryRequest = new TelemetryRequest$Type();
 // @generated message type with reflection information, may provide speed optimized methods
+class SinkMetric$Type extends MessageType<SinkMetric> {
+    constructor() {
+        super("routune.SinkMetric", [
+            { no: 1, name: "sink_id", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 2, name: "sink_name", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 3, name: "peak_volume_db", kind: "scalar", T: 2 /*ScalarType.FLOAT*/ },
+            { no: 4, name: "rms_volume_db", kind: "scalar", T: 2 /*ScalarType.FLOAT*/ }
+        ]);
+    }
+    create(value?: PartialMessage<SinkMetric>): SinkMetric {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.sinkId = "";
+        message.sinkName = "";
+        message.peakVolumeDb = 0;
+        message.rmsVolumeDb = 0;
+        if (value !== undefined)
+            reflectionMergePartial<SinkMetric>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: SinkMetric): SinkMetric {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* string sink_id */ 1:
+                    message.sinkId = reader.string();
+                    break;
+                case /* string sink_name */ 2:
+                    message.sinkName = reader.string();
+                    break;
+                case /* float peak_volume_db */ 3:
+                    message.peakVolumeDb = reader.float();
+                    break;
+                case /* float rms_volume_db */ 4:
+                    message.rmsVolumeDb = reader.float();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: SinkMetric, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* string sink_id = 1; */
+        if (message.sinkId !== "")
+            writer.tag(1, WireType.LengthDelimited).string(message.sinkId);
+        /* string sink_name = 2; */
+        if (message.sinkName !== "")
+            writer.tag(2, WireType.LengthDelimited).string(message.sinkName);
+        /* float peak_volume_db = 3; */
+        if (message.peakVolumeDb !== 0)
+            writer.tag(3, WireType.Bit32).float(message.peakVolumeDb);
+        /* float rms_volume_db = 4; */
+        if (message.rmsVolumeDb !== 0)
+            writer.tag(4, WireType.Bit32).float(message.rmsVolumeDb);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message routune.SinkMetric
+ */
+export const SinkMetric = new SinkMetric$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class GraphNodeInfo$Type extends MessageType<GraphNodeInfo> {
+    constructor() {
+        super("routune.GraphNodeInfo", [
+            { no: 1, name: "id", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 2, name: "name", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 3, name: "node_type", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 4, name: "bypassed", kind: "scalar", T: 8 /*ScalarType.BOOL*/ },
+            { no: 5, name: "peak_volume_db", kind: "scalar", T: 2 /*ScalarType.FLOAT*/ },
+            { no: 6, name: "rms_volume_db", kind: "scalar", T: 2 /*ScalarType.FLOAT*/ }
+        ]);
+    }
+    create(value?: PartialMessage<GraphNodeInfo>): GraphNodeInfo {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.id = "";
+        message.name = "";
+        message.nodeType = "";
+        message.bypassed = false;
+        message.peakVolumeDb = 0;
+        message.rmsVolumeDb = 0;
+        if (value !== undefined)
+            reflectionMergePartial<GraphNodeInfo>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: GraphNodeInfo): GraphNodeInfo {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* string id */ 1:
+                    message.id = reader.string();
+                    break;
+                case /* string name */ 2:
+                    message.name = reader.string();
+                    break;
+                case /* string node_type */ 3:
+                    message.nodeType = reader.string();
+                    break;
+                case /* bool bypassed */ 4:
+                    message.bypassed = reader.bool();
+                    break;
+                case /* float peak_volume_db */ 5:
+                    message.peakVolumeDb = reader.float();
+                    break;
+                case /* float rms_volume_db */ 6:
+                    message.rmsVolumeDb = reader.float();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: GraphNodeInfo, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* string id = 1; */
+        if (message.id !== "")
+            writer.tag(1, WireType.LengthDelimited).string(message.id);
+        /* string name = 2; */
+        if (message.name !== "")
+            writer.tag(2, WireType.LengthDelimited).string(message.name);
+        /* string node_type = 3; */
+        if (message.nodeType !== "")
+            writer.tag(3, WireType.LengthDelimited).string(message.nodeType);
+        /* bool bypassed = 4; */
+        if (message.bypassed !== false)
+            writer.tag(4, WireType.Varint).bool(message.bypassed);
+        /* float peak_volume_db = 5; */
+        if (message.peakVolumeDb !== 0)
+            writer.tag(5, WireType.Bit32).float(message.peakVolumeDb);
+        /* float rms_volume_db = 6; */
+        if (message.rmsVolumeDb !== 0)
+            writer.tag(6, WireType.Bit32).float(message.rmsVolumeDb);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message routune.GraphNodeInfo
+ */
+export const GraphNodeInfo = new GraphNodeInfo$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class GraphEdgeInfo$Type extends MessageType<GraphEdgeInfo> {
+    constructor() {
+        super("routune.GraphEdgeInfo", [
+            { no: 1, name: "from_node", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 2, name: "to_node", kind: "scalar", T: 9 /*ScalarType.STRING*/ }
+        ]);
+    }
+    create(value?: PartialMessage<GraphEdgeInfo>): GraphEdgeInfo {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.fromNode = "";
+        message.toNode = "";
+        if (value !== undefined)
+            reflectionMergePartial<GraphEdgeInfo>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: GraphEdgeInfo): GraphEdgeInfo {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* string from_node */ 1:
+                    message.fromNode = reader.string();
+                    break;
+                case /* string to_node */ 2:
+                    message.toNode = reader.string();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: GraphEdgeInfo, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* string from_node = 1; */
+        if (message.fromNode !== "")
+            writer.tag(1, WireType.LengthDelimited).string(message.fromNode);
+        /* string to_node = 2; */
+        if (message.toNode !== "")
+            writer.tag(2, WireType.LengthDelimited).string(message.toNode);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message routune.GraphEdgeInfo
+ */
+export const GraphEdgeInfo = new GraphEdgeInfo$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class GraphTopology$Type extends MessageType<GraphTopology> {
+    constructor() {
+        super("routune.GraphTopology", [
+            { no: 1, name: "nodes", kind: "message", repeat: 2 /*RepeatType.UNPACKED*/, T: () => GraphNodeInfo },
+            { no: 2, name: "edges", kind: "message", repeat: 2 /*RepeatType.UNPACKED*/, T: () => GraphEdgeInfo }
+        ]);
+    }
+    create(value?: PartialMessage<GraphTopology>): GraphTopology {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.nodes = [];
+        message.edges = [];
+        if (value !== undefined)
+            reflectionMergePartial<GraphTopology>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: GraphTopology): GraphTopology {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* repeated routune.GraphNodeInfo nodes */ 1:
+                    message.nodes.push(GraphNodeInfo.internalBinaryRead(reader, reader.uint32(), options));
+                    break;
+                case /* repeated routune.GraphEdgeInfo edges */ 2:
+                    message.edges.push(GraphEdgeInfo.internalBinaryRead(reader, reader.uint32(), options));
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: GraphTopology, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* repeated routune.GraphNodeInfo nodes = 1; */
+        for (let i = 0; i < message.nodes.length; i++)
+            GraphNodeInfo.internalBinaryWrite(message.nodes[i], writer.tag(1, WireType.LengthDelimited).fork(), options).join();
+        /* repeated routune.GraphEdgeInfo edges = 2; */
+        for (let i = 0; i < message.edges.length; i++)
+            GraphEdgeInfo.internalBinaryWrite(message.edges[i], writer.tag(2, WireType.LengthDelimited).fork(), options).join();
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message routune.GraphTopology
+ */
+export const GraphTopology = new GraphTopology$Type();
+// @generated message type with reflection information, may provide speed optimized methods
 class AudioTelemetry$Type extends MessageType<AudioTelemetry> {
     constructor() {
         super("routune.AudioTelemetry", [
             { no: 1, name: "peak_volume_db", kind: "scalar", T: 2 /*ScalarType.FLOAT*/ },
             { no: 2, name: "rms_volume_db", kind: "scalar", T: 2 /*ScalarType.FLOAT*/ },
             { no: 3, name: "spectrum", kind: "scalar", repeat: 1 /*RepeatType.PACKED*/, T: 2 /*ScalarType.FLOAT*/ },
-            { no: 4, name: "sequence_number", kind: "scalar", T: 4 /*ScalarType.UINT64*/ }
+            { no: 4, name: "sequence_number", kind: "scalar", T: 4 /*ScalarType.UINT64*/ },
+            { no: 5, name: "sink_metrics", kind: "message", repeat: 2 /*RepeatType.UNPACKED*/, T: () => SinkMetric },
+            { no: 6, name: "topology", kind: "message", T: () => GraphTopology }
         ]);
     }
     create(value?: PartialMessage<AudioTelemetry>): AudioTelemetry {
@@ -240,6 +594,7 @@ class AudioTelemetry$Type extends MessageType<AudioTelemetry> {
         message.rmsVolumeDb = 0;
         message.spectrum = [];
         message.sequenceNumber = "0";
+        message.sinkMetrics = [];
         if (value !== undefined)
             reflectionMergePartial<AudioTelemetry>(this, message, value);
         return message;
@@ -264,6 +619,12 @@ class AudioTelemetry$Type extends MessageType<AudioTelemetry> {
                     break;
                 case /* uint64 sequence_number */ 4:
                     message.sequenceNumber = reader.uint64().toString();
+                    break;
+                case /* repeated routune.SinkMetric sink_metrics */ 5:
+                    message.sinkMetrics.push(SinkMetric.internalBinaryRead(reader, reader.uint32(), options));
+                    break;
+                case /* routune.GraphTopology topology */ 6:
+                    message.topology = GraphTopology.internalBinaryRead(reader, reader.uint32(), options, message.topology);
                     break;
                 default:
                     let u = options.readUnknownField;
@@ -293,6 +654,12 @@ class AudioTelemetry$Type extends MessageType<AudioTelemetry> {
         /* uint64 sequence_number = 4; */
         if (message.sequenceNumber !== "0")
             writer.tag(4, WireType.Varint).uint64(message.sequenceNumber);
+        /* repeated routune.SinkMetric sink_metrics = 5; */
+        for (let i = 0; i < message.sinkMetrics.length; i++)
+            SinkMetric.internalBinaryWrite(message.sinkMetrics[i], writer.tag(5, WireType.LengthDelimited).fork(), options).join();
+        /* routune.GraphTopology topology = 6; */
+        if (message.topology)
+            GraphTopology.internalBinaryWrite(message.topology, writer.tag(6, WireType.LengthDelimited).fork(), options).join();
         let u = options.writeUnknownFields;
         if (u !== false)
             (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);

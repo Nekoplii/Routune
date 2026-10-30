@@ -21,9 +21,37 @@ message TelemetryRequest {
   uint32 target_fps = 1;
 }
 
+message SinkMetric {
+  string sink_id = 1;
+  string sink_name = 2;
+  float peak_volume_db = 3;
+  float rms_volume_db = 4;
+}
+
+message GraphNodeInfo {
+  string id = 1;
+  string name = 2;
+  string node_type = 3;
+  bool bypassed = 4;
+  float peak_volume_db = 5;
+  float rms_volume_db = 6;
+}
+
+message GraphEdgeInfo {
+  string from_node = 1;
+  string to_node = 2;
+}
+
+message GraphTopology {
+  repeated GraphNodeInfo nodes = 1;
+  repeated GraphEdgeInfo edges = 2;
+}
+
 message AudioTelemetry {
   float peak_volume_db = 1;
   float rms_volume_db = 2;
   repeated float spectrum = 3;
   uint64 sequence_number = 4;
+  repeated SinkMetric sink_metrics = 5;
+  GraphTopology topology = 6;
 }
