@@ -1,5 +1,6 @@
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
+use crossbeam_channel::{Receiver, Sender};
 use rubato::{FastFixedIn, PolynomialDegree, Resampler};
 use serde::{Deserialize, Serialize};
 
@@ -54,15 +55,19 @@ pub fn calculate_metrics(samples: &[f32]) -> (f32, f32) {
     (peak_db, rms_db)
 }
 
+/// Core AudioNode trait.
+/// Real-time audio rendering must remain lock-free, zero allocation, and bounded.
 pub trait AudioNode: Send {
     fn id(&self) -> &str;
     fn name(&self) -> &str;
-    fn node_type(&self) -> &str;
+    fn node_type(&self) -> &str {
+        "AudioNode"
+    }
     fn is_bypassed(&self) -> bool {
         false
     }
     fn set_bypassed(&mut self, _bypassed: bool) {}
-    fn process(&mut self, input: &[f32], output: &mut [f32], context: &ProcessContext);
+    fn set_gain(&mut self, _gain: f32) {}
     fn reset(&mut self) {}
     fn peak_db(&self) -> f32 {
         -100.0
@@ -70,9 +75,11 @@ pub trait AudioNode: Send {
     fn rms_db(&self) -> f32 {
         -100.0
     }
-    fn set_gain(&mut self, _gain: f32) {}
+    /// Lock-free rendering callback processing input slice into output slice.
+    fn process(&mut self, input: &[f32], output: &mut [f32]);
 }
 
+/// PipeWire audio input stream node (e.g. desktop monitor or virtual sink).
 pub struct PipeWireInputNode {
     id: String,
     name: String,
@@ -134,7 +141,7 @@ impl AudioNode for PipeWireInputNode {
         self.gain = gain;
     }
 
-    fn process(&mut self, input: &[f32], output: &mut [f32], _context: &ProcessContext) {
+    fn process(&mut self, input: &[f32], output: &mut [f32]) {
         let (peak, rms) = calculate_metrics(input);
         self.peak_db.store(peak.to_bits(), Ordering::Relaxed);
         self.rms_db.store(rms.to_bits(), Ordering::Relaxed);
@@ -167,7 +174,8 @@ impl AudioNode for PipeWireInputNode {
 
 pub type VirtualInputNode = PipeWireInputNode;
 
-pub struct DspBypassNode {
+/// Passthrough bypass node.
+pub struct BypassNode {
     id: String,
     name: String,
     gain: f32,
@@ -176,7 +184,7 @@ pub struct DspBypassNode {
     rms_db: Arc<AtomicU32>,
 }
 
-impl DspBypassNode {
+impl BypassNode {
     pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
         Self {
             id: id.into(),
@@ -193,7 +201,7 @@ impl DspBypassNode {
     }
 }
 
-impl AudioNode for DspBypassNode {
+impl AudioNode for BypassNode {
     fn id(&self) -> &str {
         &self.id
     }
@@ -203,7 +211,7 @@ impl AudioNode for DspBypassNode {
     }
 
     fn node_type(&self) -> &str {
-        "DspBypassNode"
+        "BypassNode"
     }
 
     fn is_bypassed(&self) -> bool {
@@ -218,14 +226,21 @@ impl AudioNode for DspBypassNode {
         self.gain = gain;
     }
 
-    fn process(&mut self, input: &[f32], output: &mut [f32], _context: &ProcessContext) {
+    fn process(&mut self, input: &[f32], output: &mut [f32]) {
         let len = input.len().min(output.len());
         if self.bypassed {
             output[..len].copy_from_slice(&input[..len]);
         } else {
-            for i in 0..len {
-                output[i] = input[i] * self.gain;
+            if (self.gain - 1.0).abs() < 1e-6 {
+                output[..len].copy_from_slice(&input[..len]);
+            } else {
+                for i in 0..len {
+                    output[i] = input[i] * self.gain;
+                }
             }
+        }
+        if len < output.len() {
+            output[len..].fill(0.0);
         }
 
         let (peak, rms) = calculate_metrics(&output[..len]);
@@ -241,6 +256,8 @@ impl AudioNode for DspBypassNode {
         f32::from_bits(self.rms_db.load(Ordering::Relaxed))
     }
 }
+
+pub type DspBypassNode = BypassNode;
 
 pub struct ResamplerNode {
     id: String,
@@ -266,22 +283,25 @@ impl ResamplerNode {
         channels: usize,
         chunk_size: usize,
     ) -> Result<Self, rubato::ResamplerConstructionError> {
-        let (resampler, in_planar, out_planar) = if source_rate != target_rate {
-            let ratio = target_rate as f64 / source_rate as f64;
-            let r = FastFixedIn::<f32>::new(
-                ratio,
+        let resampler = if source_rate != target_rate {
+            Some(FastFixedIn::<f32>::new(
+                target_rate as f64 / source_rate as f64,
                 1.0,
-                PolynomialDegree::Linear,
+                PolynomialDegree::Septic,
                 chunk_size,
                 channels,
-            )?;
-            let max_out = r.output_frames_max();
-            let in_buf = vec![vec![0.0f32; chunk_size]; channels];
-            let out_buf = vec![vec![0.0f32; max_out]; channels];
-            (Some(r), in_buf, out_buf)
+            )?)
         } else {
-            (None, Vec::new(), Vec::new())
+            None
         };
+
+        let in_planar = vec![vec![0.0f32; chunk_size]; channels];
+        let max_out_frames = if source_rate != target_rate {
+            ((chunk_size as f64 * target_rate as f64 / source_rate as f64).ceil() as usize) + 64
+        } else {
+            chunk_size
+        };
+        let out_planar = vec![vec![0.0f32; max_out_frames]; channels];
 
         Ok(Self {
             id: id.into(),
@@ -297,6 +317,10 @@ impl ResamplerNode {
             peak_db: Arc::new(AtomicU32::new((-100.0f32).to_bits())),
             rms_db: Arc::new(AtomicU32::new((-100.0f32).to_bits())),
         })
+    }
+
+    pub fn metrics_handles(&self) -> (Arc<AtomicU32>, Arc<AtomicU32>) {
+        (self.peak_db.clone(), self.rms_db.clone())
     }
 }
 
@@ -321,7 +345,7 @@ impl AudioNode for ResamplerNode {
         self.bypassed = bypassed;
     }
 
-    fn process(&mut self, input: &[f32], output: &mut [f32], _context: &ProcessContext) {
+    fn process(&mut self, input: &[f32], output: &mut [f32]) {
         if self.bypassed || self.source_rate == self.target_rate || self.resampler.is_none() {
             let len = input.len().min(output.len());
             output[..len].copy_from_slice(&input[..len]);
@@ -338,7 +362,7 @@ impl AudioNode for ResamplerNode {
             return;
         }
 
-        // De-interleave into pre-allocated planar input buffer
+        // De-interleave input without allocating
         for ch in 0..self.channels {
             for f in 0..frames_in {
                 self.in_planar[ch][f] = input[f * self.channels + ch];
@@ -386,6 +410,7 @@ pub struct PhysicalOutputNode {
     name: String,
     device_name: String,
     bypassed: bool,
+    gain: f32,
     peak_db: Arc<AtomicU32>,
     rms_db: Arc<AtomicU32>,
     frames_processed: Arc<AtomicU64>,
@@ -398,6 +423,7 @@ impl PhysicalOutputNode {
             name: name.into(),
             device_name: device_name.into(),
             bypassed: false,
+            gain: 1.0,
             peak_db: Arc::new(AtomicU32::new((-100.0f32).to_bits())),
             rms_db: Arc::new(AtomicU32::new((-100.0f32).to_bits())),
             frames_processed: Arc::new(AtomicU64::new(0)),
@@ -414,6 +440,10 @@ impl PhysicalOutputNode {
             self.rms_db.clone(),
             self.frames_processed.clone(),
         )
+    }
+
+    pub fn frames_processed_handle(&self) -> Arc<AtomicU64> {
+        self.frames_processed.clone()
     }
 }
 
@@ -438,22 +468,31 @@ impl AudioNode for PhysicalOutputNode {
         self.bypassed = bypassed;
     }
 
-    fn process(&mut self, input: &[f32], output: &mut [f32], context: &ProcessContext) {
+    fn set_gain(&mut self, gain: f32) {
+        self.gain = gain;
+    }
+
+    fn process(&mut self, input: &[f32], output: &mut [f32]) {
         let len = input.len().min(output.len());
         if self.bypassed {
             output.fill(0.0);
         } else {
-            output[..len].copy_from_slice(&input[..len]);
+            if (self.gain - 1.0).abs() < 1e-6 {
+                output[..len].copy_from_slice(&input[..len]);
+            } else {
+                for i in 0..len {
+                    output[i] = input[i] * self.gain;
+                }
+            }
+            if len < output.len() {
+                output[len..].fill(0.0);
+            }
         }
 
         let (peak, rms) = calculate_metrics(&output[..len]);
         self.peak_db.store(peak.to_bits(), Ordering::Relaxed);
         self.rms_db.store(rms.to_bits(), Ordering::Relaxed);
-
-        if context.channels > 0 {
-            let frames = len / context.channels;
-            self.frames_processed.fetch_add(frames as u64, Ordering::Relaxed);
-        }
+        self.frames_processed.fetch_add((len / 2) as u64, Ordering::Relaxed);
     }
 
     fn peak_db(&self) -> f32 {
@@ -465,11 +504,12 @@ impl AudioNode for PhysicalOutputNode {
     }
 }
 
+/// Commands sent to the audio thread to mutate Graph state lock-free.
 pub enum GraphCommand {
     AddNode(Box<dyn AudioNode>),
     RemoveNode(String),
-    Connect { from: String, to: String },
-    Disconnect { from: String, to: String },
+    ConnectNode { from: String, to: String },
+    DisconnectNode { from: String, to: String },
     SetBypass { id: String, bypassed: bool },
     SetGain { id: String, gain: f32 },
 }
@@ -481,20 +521,31 @@ pub struct NodeSlot {
     pub targets: Vec<usize>,
 }
 
-pub struct AudioEngineGraph {
+/// Real-time audio routing graph.
+/// Exclusively owned by the cpal audio callback thread or PipeWire process thread.
+/// Consumes commands via crossbeam bounded channel without Mutex.
+pub struct Graph {
     slots: Vec<Option<NodeSlot>>,
     execution_order: Vec<usize>,
-    cmd_consumer: rtrb::Consumer<GraphCommand>,
-    recycle_producer: rtrb::Producer<Box<dyn AudioNode>>,
+    cmd_consumer: Receiver<GraphCommand>,
+    recycle_producer: Option<Sender<Box<dyn AudioNode>>>,
     scratch_mix: Vec<f32>,
+    max_buffer_size: usize,
 }
 
-pub type Graph = AudioEngineGraph;
+pub type AudioEngineGraph = Graph;
 
-impl AudioEngineGraph {
+impl Graph {
     pub fn new(
-        cmd_consumer: rtrb::Consumer<GraphCommand>,
-        recycle_producer: rtrb::Producer<Box<dyn AudioNode>>,
+        cmd_consumer: Receiver<GraphCommand>,
+        max_buffer_size: usize,
+    ) -> Self {
+        Self::new_with_recycler(cmd_consumer, None, max_buffer_size)
+    }
+
+    pub fn new_with_recycler(
+        cmd_consumer: Receiver<GraphCommand>,
+        recycle_producer: Option<Sender<Box<dyn AudioNode>>>,
         max_buffer_size: usize,
     ) -> Self {
         let mut slots = Vec::with_capacity(MAX_GRAPH_NODES);
@@ -508,6 +559,7 @@ impl AudioEngineGraph {
             cmd_consumer,
             recycle_producer,
             scratch_mix: vec![0.0f32; max_buffer_size],
+            max_buffer_size,
         }
     }
 
@@ -547,58 +599,54 @@ impl AudioEngineGraph {
             }
         }
 
-        let mut queue = Vec::with_capacity(MAX_GRAPH_NODES);
+        let mut queue = Vec::with_capacity(active_indices.len());
         for &i in &active_indices {
             if in_degrees[i] == 0 {
                 queue.push(i);
             }
         }
 
-        let mut sorted = Vec::with_capacity(active_indices.len());
-        while let Some(u) = queue.pop() {
-            sorted.push(u);
+        let mut order = Vec::with_capacity(active_indices.len());
+        let mut head = 0;
+        while head < queue.len() {
+            let u = queue[head];
+            head += 1;
+            order.push(u);
+
             if let Some(slot) = &self.slots[u] {
-                for &v in &slot.targets {
-                    if v < MAX_GRAPH_NODES && self.slots[v].is_some() {
-                        in_degrees[v] = in_degrees[v].saturating_sub(1);
-                        if in_degrees[v] == 0 {
-                            queue.push(v);
+                for &target in &slot.targets {
+                    if target < MAX_GRAPH_NODES && self.slots[target].is_some() {
+                        in_degrees[target] -= 1;
+                        if in_degrees[target] == 0 {
+                            queue.push(target);
                         }
                     }
                 }
             }
         }
 
-        // If cycle detected, append remaining active nodes
-        for &i in &active_indices {
-            if !sorted.contains(&i) {
-                sorted.push(i);
-            }
-        }
-
-        self.execution_order = sorted;
+        self.execution_order = order;
     }
 
+    /// Process non-blocking mutations from crossbeam command queue at start of audio callback.
     pub fn drain_commands(&mut self) {
         let mut topology_changed = false;
-        while let Ok(cmd) = self.cmd_consumer.pop() {
+        while let Ok(cmd) = self.cmd_consumer.try_recv() {
             match cmd {
                 GraphCommand::AddNode(node) => {
                     let id = node.id().to_string();
-                    if self.find_slot_by_id(&id).is_some() {
-                        let _ = self.recycle_producer.push(node);
-                        continue;
-                    }
-                    if let Some(free_idx) = self.find_free_slot() {
+                    if let Some(existing) = self.find_slot_by_id(&id) {
+                        if let Some(slot) = &mut self.slots[existing] {
+                            slot.node = node;
+                        }
+                    } else if let Some(free_idx) = self.find_free_slot() {
                         self.slots[free_idx] = Some(NodeSlot {
                             node,
-                            input_buffer: vec![0.0f32; self.scratch_mix.len()],
-                            output_buffer: vec![0.0f32; self.scratch_mix.len()],
-                            targets: Vec::with_capacity(MAX_GRAPH_NODES),
+                            input_buffer: vec![0.0f32; self.max_buffer_size],
+                            output_buffer: vec![0.0f32; self.max_buffer_size],
+                            targets: Vec::new(),
                         });
                         topology_changed = true;
-                    } else {
-                        let _ = self.recycle_producer.push(node);
                     }
                 }
                 GraphCommand::RemoveNode(id) => {
@@ -607,12 +655,14 @@ impl AudioEngineGraph {
                             slot.targets.retain(|&t| t != idx);
                         }
                         if let Some(removed_slot) = self.slots[idx].take() {
-                            let _ = self.recycle_producer.push(removed_slot.node);
+                            if let Some(producer) = &self.recycle_producer {
+                                let _ = producer.try_send(removed_slot.node);
+                            }
                         }
                         topology_changed = true;
                     }
                 }
-                GraphCommand::Connect { from, to } => {
+                GraphCommand::ConnectNode { from, to } => {
                     if let (Some(from_idx), Some(to_idx)) =
                         (self.find_slot_by_id(&from), self.find_slot_by_id(&to))
                     {
@@ -624,13 +674,15 @@ impl AudioEngineGraph {
                         }
                     }
                 }
-                GraphCommand::Disconnect { from, to } => {
+                GraphCommand::DisconnectNode { from, to } => {
                     if let (Some(from_idx), Some(to_idx)) =
                         (self.find_slot_by_id(&from), self.find_slot_by_id(&to))
                     {
                         if let Some(slot) = &mut self.slots[from_idx] {
-                            slot.targets.retain(|&t| t != to_idx);
-                            topology_changed = true;
+                            if let Some(pos) = slot.targets.iter().position(|&t| t == to_idx) {
+                                slot.targets.remove(pos);
+                                topology_changed = true;
+                            }
                         }
                     }
                 }
@@ -656,35 +708,55 @@ impl AudioEngineGraph {
         }
     }
 
-    /// Real-time audio rendering iteration.
-    ///
-    /// Must remain lock-free, zero allocation, and bounded.
-    pub fn process_quantum(&mut self, final_output: &mut [f32], context: &ProcessContext) {
+    /// Real-time audio rendering loop method for CPAL / PipeWire callback thread.
+    /// Exclusively owned by the audio thread; lock-free, zero allocation.
+    pub fn process(&mut self, input: &[f32], output: &mut [f32]) {
+        self.drain_commands();
+
+        let len = output.len().min(self.scratch_mix.len());
+        self.scratch_mix[..len].fill(0.0);
+
+        if !input.is_empty() {
+            if let Some(&first_idx) = self.execution_order.first() {
+                if let Some(slot) = &mut self.slots[first_idx] {
+                    let copy_len = input.len().min(slot.input_buffer.len());
+                    slot.input_buffer[..copy_len].copy_from_slice(&input[..copy_len]);
+                }
+            }
+        }
+
+        self.execute_routing(len);
+        output[..len].copy_from_slice(&self.scratch_mix[..len]);
+    }
+
+    /// Render quantum for PipeWire bridge stream loop.
+    pub fn process_quantum(&mut self, final_output: &mut [f32], _context: &ProcessContext) {
         self.drain_commands();
 
         let len = final_output.len().min(self.scratch_mix.len());
         self.scratch_mix[..len].fill(0.0);
 
-        // Process in topological order so producer outputs are instantly available to consumers
+        self.execute_routing(len);
+        final_output[..len].copy_from_slice(&self.scratch_mix[..len]);
+    }
+
+    fn execute_routing(&mut self, len: usize) {
         for &idx in &self.execution_order {
             if idx >= self.slots.len() || self.slots[idx].is_none() {
                 continue;
             }
 
-            // 1. Process slot
             let (targets, is_terminal) = {
                 let slot = self.slots[idx].as_mut().unwrap();
                 let in_len = slot.input_buffer.len().min(len);
                 slot.node.process(
                     &slot.input_buffer[..in_len],
                     &mut slot.output_buffer[..in_len],
-                    context,
                 );
                 slot.input_buffer[..in_len].fill(0.0);
                 (slot.targets.clone(), slot.targets.is_empty())
             };
 
-            // 2. Mix to target inputs or final scratch mix
             if is_terminal {
                 if let Some(slot) = &self.slots[idx] {
                     for s in 0..len {
@@ -714,8 +786,6 @@ impl AudioEngineGraph {
                 }
             }
         }
-
-        final_output[..len].copy_from_slice(&self.scratch_mix[..len]);
     }
 
     /// Feed input directly into a designated node slot (e.g. from virtual sink).
@@ -740,17 +810,27 @@ pub struct NodeInfo {
 }
 
 pub struct GraphController {
-    cmd_producer: rtrb::Producer<GraphCommand>,
-    recycle_consumer: rtrb::Consumer<Box<dyn AudioNode>>,
+    cmd_producer: Sender<GraphCommand>,
+    recycle_consumer: Option<Receiver<Box<dyn AudioNode>>>,
     active_nodes: Vec<String>,
     active_edges: Vec<(String, String)>,
     node_infos: Vec<NodeInfo>,
 }
 
 impl GraphController {
-    pub fn new(
-        cmd_producer: rtrb::Producer<GraphCommand>,
-        recycle_consumer: rtrb::Consumer<Box<dyn AudioNode>>,
+    pub fn new(cmd_producer: Sender<GraphCommand>) -> Self {
+        Self {
+            cmd_producer,
+            recycle_consumer: None,
+            active_nodes: Vec::new(),
+            active_edges: Vec::new(),
+            node_infos: Vec::new(),
+        }
+    }
+
+    pub fn new_with_recycler(
+        cmd_producer: Sender<GraphCommand>,
+        recycle_consumer: Option<Receiver<Box<dyn AudioNode>>>,
     ) -> Self {
         Self {
             cmd_producer,
@@ -773,7 +853,7 @@ impl GraphController {
             bypassed: node.is_bypassed(),
         };
         self.cmd_producer
-            .push(GraphCommand::AddNode(node))
+            .try_send(GraphCommand::AddNode(node))
             .map_err(|_| "Command queue full")?;
         self.active_nodes.push(id);
         self.node_infos.push(info);
@@ -785,22 +865,27 @@ impl GraphController {
             return Err("Node ID not found");
         }
         self.cmd_producer
-            .push(GraphCommand::RemoveNode(id.to_string()))
+            .try_send(GraphCommand::RemoveNode(id.to_string()))
             .map_err(|_| "Command queue full")?;
         self.active_nodes.retain(|n| n != id);
-        self.node_infos.retain(|n| n.id != id);
-        self.active_edges
-            .retain(|(from, to)| from != id && to != id);
+        self.active_edges.retain(|(f, t)| f != id && t != id);
+        self.node_infos.retain(|info| info.id != id);
         Ok(())
     }
 
     pub fn connect(&mut self, from: &str, to: &str) -> Result<(), &'static str> {
+        if !self.active_nodes.iter().any(|n| n == from) {
+            return Err("Source node not found");
+        }
+        if !self.active_nodes.iter().any(|n| n == to) {
+            return Err("Destination node not found");
+        }
         let edge = (from.to_string(), to.to_string());
         if self.active_edges.contains(&edge) {
             return Ok(());
         }
         self.cmd_producer
-            .push(GraphCommand::Connect {
+            .try_send(GraphCommand::ConnectNode {
                 from: from.to_string(),
                 to: to.to_string(),
             })
@@ -811,19 +896,18 @@ impl GraphController {
 
     pub fn disconnect(&mut self, from: &str, to: &str) -> Result<(), &'static str> {
         self.cmd_producer
-            .push(GraphCommand::Disconnect {
+            .try_send(GraphCommand::DisconnectNode {
                 from: from.to_string(),
                 to: to.to_string(),
             })
             .map_err(|_| "Command queue full")?;
-        self.active_edges
-            .retain(|(f, t)| !(f == from && t == to));
+        self.active_edges.retain(|(f, t)| !(f == from && t == to));
         Ok(())
     }
 
     pub fn set_bypass(&mut self, id: &str, bypassed: bool) -> Result<(), &'static str> {
         self.cmd_producer
-            .push(GraphCommand::SetBypass {
+            .try_send(GraphCommand::SetBypass {
                 id: id.to_string(),
                 bypassed,
             })
@@ -836,7 +920,7 @@ impl GraphController {
 
     pub fn set_gain(&mut self, id: &str, gain: f32) -> Result<(), &'static str> {
         self.cmd_producer
-            .push(GraphCommand::SetGain {
+            .try_send(GraphCommand::SetGain {
                 id: id.to_string(),
                 gain,
             })
@@ -844,11 +928,13 @@ impl GraphController {
         Ok(())
     }
 
-    /// Drain and safely deallocate recycled nodes on the non-RT control thread.
+    /// Garbage-collect removed nodes outside the RT thread.
     pub fn collect_garbage(&mut self) -> usize {
         let mut count = 0;
-        while self.recycle_consumer.pop().is_ok() {
-            count += 1;
+        if let Some(rx) = &self.recycle_consumer {
+            while let Ok(_recycled) = rx.try_recv() {
+                count += 1;
+            }
         }
         count
     }
@@ -869,12 +955,12 @@ impl GraphController {
 pub fn create_graph_pair(
     queue_capacity: usize,
     max_buffer_size: usize,
-) -> (GraphController, AudioEngineGraph) {
-    let (cmd_tx, cmd_rx) = rtrb::RingBuffer::new(queue_capacity);
-    let (recycle_tx, recycle_rx) = rtrb::RingBuffer::new(queue_capacity);
+) -> (GraphController, Graph) {
+    let (cmd_tx, cmd_rx) = crossbeam_channel::bounded(queue_capacity);
+    let (recycle_tx, recycle_rx) = crossbeam_channel::bounded(queue_capacity);
 
-    let controller = GraphController::new(cmd_tx, recycle_rx);
-    let engine = AudioEngineGraph::new(cmd_rx, recycle_tx, max_buffer_size);
+    let controller = GraphController::new_with_recycler(cmd_tx, Some(recycle_rx));
+    let engine = Graph::new_with_recycler(cmd_rx, Some(recycle_tx), max_buffer_size);
 
     (controller, engine)
 }
@@ -886,34 +972,32 @@ mod tests {
     #[test]
     fn test_virtual_input_node_process_and_telemetry() {
         let mut node = VirtualInputNode::new("game-input", "Game Audio", "routune-game");
-        let ctx = ProcessContext::default();
         let input = [0.5f32, -0.5f32, 0.5f32, -0.5f32];
         let mut output = [0.0f32; 4];
 
-        node.process(&input, &mut output, &ctx);
+        node.process(&input, &mut output);
 
         assert_eq!(output, input);
         assert!((node.peak_db() - (-6.02)).abs() < 0.1);
         assert!((node.rms_db() - (-6.02)).abs() < 0.1);
 
         node.set_bypassed(true);
-        node.process(&input, &mut output, &ctx);
+        node.process(&input, &mut output);
         assert_eq!(output, [0.0, 0.0, 0.0, 0.0]);
     }
 
     #[test]
-    fn test_dsp_bypass_node_gain() {
-        let mut node = DspBypassNode::new("dsp-gain", "Gain Stage");
+    fn test_bypass_node_gain_and_passthrough() {
+        let mut node = BypassNode::new("dsp-gain", "Gain Stage");
         node.set_gain(0.5);
-        let ctx = ProcessContext::default();
         let input = [1.0f32, -1.0f32];
         let mut output = [0.0f32; 2];
 
-        node.process(&input, &mut output, &ctx);
+        node.process(&input, &mut output);
         assert_eq!(output, [0.5, -0.5]);
 
         node.set_bypassed(true);
-        node.process(&input, &mut output, &ctx);
+        node.process(&input, &mut output);
         assert_eq!(output, [1.0, -1.0]);
     }
 
@@ -929,11 +1013,10 @@ mod tests {
         )
         .expect("Failed to create matching resampler");
 
-        let ctx = ProcessContext::default();
         let input = [0.25f32; 16];
         let mut output = [0.0f32; 16];
 
-        resampler.process(&input, &mut output, &ctx);
+        resampler.process(&input, &mut output);
         assert_eq!(output, input);
     }
 
@@ -950,16 +1033,10 @@ mod tests {
         )
         .expect("Failed to create resampler");
 
-        let ctx = ProcessContext {
-            sample_rate: 48000,
-            channels: 2,
-            frames: chunk_size,
-        };
-
         let input = vec![0.5f32; chunk_size * 2];
         let mut output = vec![0.0f32; 600 * 2];
 
-        resampler.process(&input, &mut output, &ctx);
+        resampler.process(&input, &mut output);
         assert!(resampler.peak_db() > -10.0);
     }
 
@@ -968,7 +1045,7 @@ mod tests {
         let (mut controller, mut engine) = create_graph_pair(32, 512);
 
         let input_node = Box::new(VirtualInputNode::new("in1", "Input", "routune-game"));
-        let dsp_node = Box::new(DspBypassNode::new("dsp1", "DSP"));
+        let dsp_node = Box::new(BypassNode::new("dsp1", "DSP"));
         let out_node = Box::new(PhysicalOutputNode::new("out1", "Out", "Speakers"));
 
         controller.add_node(input_node).expect("Add in1 failed");
@@ -978,7 +1055,6 @@ mod tests {
         controller.connect("in1", "dsp1").expect("Connect 1 failed");
         controller.connect("dsp1", "out1").expect("Connect 2 failed");
 
-        let ctx = ProcessContext::default();
         let mut final_buf = vec![0.0f32; 16];
 
         // Drain pending creation commands
@@ -986,16 +1062,72 @@ mod tests {
 
         // Feed test data
         engine.feed_node_input("in1", &[0.5f32; 16]);
-        engine.process_quantum(&mut final_buf, &ctx);
+        engine.process(&[], &mut final_buf);
 
         assert!((final_buf[0] - 0.5).abs() < 1e-4);
 
         // Remove node dynamically while stream is running
         controller.remove_node("dsp1").expect("Remove dsp1 failed");
-        engine.process_quantum(&mut final_buf, &ctx);
+        engine.process(&[], &mut final_buf);
 
         // Verify GC collects decommissioned node off RT thread
         let collected = controller.collect_garbage();
         assert_eq!(collected, 1);
+    }
+
+    #[test]
+    fn test_cpal_audio_thread_ownership_model() {
+        let (cmd_tx, cmd_rx) = crossbeam_channel::bounded::<GraphCommand>(64);
+        let (output_tx, output_rx) = crossbeam_channel::bounded::<Vec<f32>>(8);
+
+        // Graph moved exclusively into dedicated audio thread (simulating CPAL audio callback)
+        let audio_thread = std::thread::spawn(move || {
+            let mut graph = Graph::new(cmd_rx, 256);
+            let mut out = vec![0.0f32; 16];
+
+            for _ in 0..5 {
+                let input = [1.0f32; 16];
+                graph.process(&input, &mut out);
+                let _ = output_tx.send(out.clone());
+            }
+        });
+
+        // gRPC server thread produces commands without Mutex
+        cmd_tx
+            .send(GraphCommand::AddNode(Box::new(BypassNode::new(
+                "bypass-1",
+                "Passthrough",
+            ))))
+            .unwrap();
+        cmd_tx
+            .send(GraphCommand::AddNode(Box::new(PhysicalOutputNode::new(
+                "out-1",
+                "Master Out",
+                "hw:0",
+            ))))
+            .unwrap();
+        cmd_tx
+            .send(GraphCommand::ConnectNode {
+                from: "bypass-1".into(),
+                to: "out-1".into(),
+            })
+            .unwrap();
+        cmd_tx
+            .send(GraphCommand::SetGain {
+                id: "bypass-1".into(),
+                gain: 0.75,
+            })
+            .unwrap();
+
+        audio_thread.join().unwrap();
+
+        let mut received = Vec::new();
+        while let Ok(frame) = output_rx.try_recv() {
+            received.push(frame);
+        }
+        assert!(!received.is_empty());
+        // Last frames should reflect processed output
+        let last_frame = received.last().unwrap();
+        assert!((last_frame[0] - 0.75).abs() < 1e-4);
     }
 }

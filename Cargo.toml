@@ -24,6 +24,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 cpal = "0.15"
 rtrb = "0.3"
+crossbeam-channel = "0.5"
 tonic = "0.12"
 tonic-web = "0.12"
 prost = "0.13"

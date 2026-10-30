@@ -1,6 +1,10 @@
 pub mod graph;
 
-pub use graph::{AudioNode, Graph, PhysicalOutputNode, PipeWireInputNode, VirtualInputNode};
+pub use graph::{
+    AudioEngineGraph, AudioNode, BypassNode, DspBypassNode, Graph, GraphCommand,
+    GraphController, NodeInfo, PhysicalOutputNode, PipeWireInputNode, ProcessContext,
+    VirtualInputNode,
+};
 
 use serde::{Deserialize, Serialize};
 

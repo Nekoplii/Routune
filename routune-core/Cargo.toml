@@ -10,3 +10,4 @@ serde_json.workspace = true
 thiserror.workspace = true
 rubato = "0.16"
 rtrb.workspace = true
+crossbeam-channel.workspace = true
