@@ -1,3 +1,7 @@
+pub mod graph;
+
+pub use graph::{AudioNode, Graph, PhysicalOutputNode, PipeWireInputNode, VirtualInputNode};
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
