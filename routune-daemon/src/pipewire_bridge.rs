@@ -74,11 +74,11 @@ impl PipeWireBridgeService {
         let (game_prod, game_cons) = RingBuffer::<f32>::new(RING_BUFFER_SAMPLES);
         let (chat_prod, chat_cons) = RingBuffer::<f32>::new(RING_BUFFER_SAMPLES);
 
-        let (cmd_prod, cmd_cons) = RingBuffer::new(128);
-        let (recycle_prod, recycle_cons) = RingBuffer::new(128);
+        let (cmd_tx, cmd_rx) = crossbeam_channel::bounded(128);
+        let (recycle_tx, recycle_rx) = crossbeam_channel::bounded(128);
 
-        let graph = AudioEngineGraph::new(cmd_cons, recycle_prod, SCRATCH_BUFFER_SAMPLES);
-        let mut controller = GraphController::new(cmd_prod, recycle_cons);
+        let graph = AudioEngineGraph::new_with_recycler(cmd_rx, Some(recycle_tx), SCRATCH_BUFFER_SAMPLES);
+        let mut controller = GraphController::new_with_recycler(cmd_tx, Some(recycle_rx));
 
         let is_active = Arc::new(AtomicBool::new(false));
         let game_peak = Arc::new(AtomicU32::new((-100.0f32).to_bits()));
