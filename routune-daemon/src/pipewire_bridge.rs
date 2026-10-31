@@ -21,6 +21,60 @@ pub const SCRATCH_BUFFER_SAMPLES: usize = 4096;
 
 struct BridgeShutdown;
 
+#[derive(Debug, Clone)]
+pub struct AppRouteCommand {
+    pub app_id: u32,
+    pub target_channel: AudioChannel,
+}
+
+#[derive(Debug, Clone)]
+pub struct DiscoveredApp {
+    pub id: u32,
+    pub name: String,
+    pub icon_name: String,
+    pub target_node: Option<u32>,
+    pub target_object: Option<String>,
+}
+
+impl DiscoveredApp {
+    pub fn to_proto(&self, virtual_sinks: &std::collections::HashMap<String, u32>) -> crate::server::proto::AppStream {
+        let (current_sink, current_sink_name) = self.resolve_channel(virtual_sinks);
+        crate::server::proto::AppStream {
+            app_id: self.id,
+            name: self.name.clone(),
+            icon_name: self.icon_name.clone(),
+            current_sink: current_sink as i32,
+            current_sink_name,
+        }
+    }
+
+    pub fn resolve_channel(&self, virtual_sinks: &std::collections::HashMap<String, u32>) -> (AudioChannel, String) {
+        if let Some(ref obj) = self.target_object {
+            match obj.as_str() {
+                "routune-game" => return (AudioChannel::Game, "Routune Game".to_string()),
+                "routune-chat" => return (AudioChannel::Chat, "Routune Chat".to_string()),
+                "routune-media" => return (AudioChannel::Media, "Routune Media".to_string()),
+                "routune-aux" => return (AudioChannel::Aux, "Routune Aux".to_string()),
+                _ => {}
+            }
+        }
+        if let Some(target_id) = self.target_node {
+            for (name, id) in virtual_sinks {
+                if *id == target_id {
+                    match name.as_str() {
+                        "routune-game" => return (AudioChannel::Game, "Routune Game".to_string()),
+                        "routune-chat" => return (AudioChannel::Chat, "Routune Chat".to_string()),
+                        "routune-media" => return (AudioChannel::Media, "Routune Media".to_string()),
+                        "routune-aux" => return (AudioChannel::Aux, "Routune Aux".to_string()),
+                        _ => {}
+                    }
+                }
+            }
+        }
+        (AudioChannel::Master, "Default Output".to_string())
+    }
+}
+
 struct VirtualSinkUserData {
     pusher: Arc<std::sync::Mutex<Option<rtrb::Producer<f32>>>>,
     peak_db: Arc<AtomicU32>,
@@ -40,6 +94,9 @@ struct DesktopMonitorUserData {
 pub struct PipeWireBridgeService {
     thread_handle: Option<JoinHandle<()>>,
     shutdown_sender: pw::channel::Sender<BridgeShutdown>,
+    route_app_tx: pw::channel::Sender<AppRouteCommand>,
+    discovered_apps: Arc<std::sync::Mutex<std::collections::HashMap<u32, DiscoveredApp>>>,
+    virtual_sinks: Arc<std::sync::Mutex<std::collections::HashMap<String, u32>>>,
     graph_controller: Arc<std::sync::Mutex<GraphController>>,
     game_eq_tx: crossbeam_channel::Sender<GraphCommand>,
     chat_eq_tx: crossbeam_channel::Sender<GraphCommand>,
@@ -128,8 +185,14 @@ impl PipeWireBridgeService {
             controller.connect(bypass_id, out_id).map_err(|e| anyhow::anyhow!(e))?;
         }
 
-        // 2. Setup PipeWire channel for shutdown
+        // 2. Setup PipeWire channel for shutdown and application routing
         let (shutdown_sender, shutdown_receiver) = pw::channel::channel::<BridgeShutdown>();
+        let (route_app_tx, route_app_rx) = pw::channel::channel::<AppRouteCommand>();
+
+        let discovered_apps: Arc<std::sync::Mutex<std::collections::HashMap<u32, DiscoveredApp>>> =
+            Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
+        let virtual_sinks: Arc<std::sync::Mutex<std::collections::HashMap<String, u32>>> =
+            Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
 
         // Rendezvous channel to wait for thread startup outcome
         let (init_tx, init_rx) = std::sync::mpsc::sync_channel::<anyhow::Result<()>>(0);
@@ -158,6 +221,9 @@ impl PipeWireBridgeService {
 
         let thread_config = config.cloned();
 
+        let t_discovered_apps = discovered_apps.clone();
+        let t_virtual_sinks = virtual_sinks.clone();
+
         let thread_handle = std::thread::Builder::new()
             .name("pipewire-bridge".into())
             .spawn(move || {
@@ -184,6 +250,140 @@ impl PipeWireBridgeService {
                         return;
                     }
                 };
+
+                let registry = match core.get_registry_rc() {
+                    Ok(r) => r,
+                    Err(e) => {
+                        let _ = init_tx.send(Err(anyhow::anyhow!("Failed to get PipeWire registry: {:?}", e)));
+                        return;
+                    }
+                };
+
+                let metadata_cell: std::rc::Rc<std::cell::RefCell<Option<pw::metadata::Metadata>>> =
+                    std::rc::Rc::new(std::cell::RefCell::new(None));
+                let metadata_listener_cell: std::rc::Rc<std::cell::RefCell<Option<pw::metadata::MetadataListener>>> =
+                    std::rc::Rc::new(std::cell::RefCell::new(None));
+
+                let t_apps_reg = t_discovered_apps.clone();
+                let t_sinks_reg = t_virtual_sinks.clone();
+                let t_meta_cell = metadata_cell.clone();
+                let t_meta_listener_cell = metadata_listener_cell.clone();
+                let t_registry = registry.clone();
+
+                let _registry_listener = registry
+                    .add_listener_local()
+                    .global(move |global| {
+                        if global.type_ == pw::types::ObjectType::Metadata {
+                            if let Some(props) = &global.props {
+                                let dict = props.as_ref();
+                                if dict.get("metadata.name") == Some("default") {
+                                    match t_registry.bind::<pw::metadata::Metadata, _>(global) {
+                                        Ok(meta) => {
+                                            info!("Successfully bound to PipeWire 'default' metadata global id {}", global.id);
+                                            let prop_apps = t_apps_reg.clone();
+                                            let listener = meta
+                                                .add_listener_local()
+                                                .property(move |subject, key, _type, value| {
+                                                    if let Some(key) = key {
+                                                        if key == "target.node" || key == "target.object" {
+                                                            if let Ok(mut apps) = prop_apps.lock() {
+                                                                if let Some(app) = apps.get_mut(&subject) {
+                                                                    if key == "target.node" {
+                                                                        app.target_node = value.and_then(|v| v.parse::<u32>().ok());
+                                                                    } else if key == "target.object" {
+                                                                        app.target_object = value.map(|v| v.to_string());
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                    0
+                                                })
+                                                .register();
+                                            *t_meta_listener_cell.borrow_mut() = Some(listener);
+                                            *t_meta_cell.borrow_mut() = Some(meta);
+                                        }
+                                        Err(e) => {
+                                            tracing::warn!("Failed to bind to metadata global: {:?}", e);
+                                        }
+                                    }
+                                }
+                            }
+                        } else if global.type_ == pw::types::ObjectType::Node {
+                            if let Some(props) = &global.props {
+                                let dict = props.as_ref();
+                                let node_name = dict.get("node.name").unwrap_or("");
+                                if node_name == "routune-game" || node_name == "routune-chat" || node_name == "routune-media" || node_name == "routune-aux" {
+                                    if let Ok(mut sinks) = t_sinks_reg.lock() {
+                                        sinks.insert(node_name.to_string(), global.id);
+                                    }
+                                }
+
+                                let media_class = dict.get("media.class").unwrap_or("");
+                                if media_class == "Stream/Output/Audio" {
+                                    let app_name = dict.get("application.name")
+                                        .or_else(|| dict.get("window.title"))
+                                        .or_else(|| dict.get("media.name"))
+                                        .or_else(|| dict.get("node.name"))
+                                        .unwrap_or("Unknown App");
+
+                                    if !node_name.starts_with("routune-") && !app_name.starts_with("routune-") {
+                                        let icon_name = dict.get("application.icon-name")
+                                            .or_else(|| dict.get("application.process.binary"))
+                                            .unwrap_or("")
+                                            .to_string();
+
+                                        let target_obj = dict.get("target.object").map(|s| s.to_string());
+                                        let target_node = dict.get("target.node").and_then(|s| s.parse::<u32>().ok());
+
+                                        if let Ok(mut apps) = t_apps_reg.lock() {
+                                            apps.insert(global.id, DiscoveredApp {
+                                                id: global.id,
+                                                name: app_name.to_string(),
+                                                icon_name,
+                                                target_node,
+                                                target_object: target_obj,
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    })
+                    .global_remove({
+                        let t_apps_rem = t_discovered_apps.clone();
+                        let t_sinks_rem = t_virtual_sinks.clone();
+                        move |id| {
+                            if let Ok(mut apps) = t_apps_rem.lock() {
+                                apps.remove(&id);
+                            }
+                            if let Ok(mut sinks) = t_sinks_rem.lock() {
+                                sinks.retain(|_, v| *v != id);
+                            }
+                        }
+                    })
+                    .register();
+
+                let t_sinks_cmd = t_virtual_sinks.clone();
+                let cmd_meta_cell = metadata_cell.clone();
+                let _route_app_sub = route_app_rx.attach(mainloop.loop_(), move |cmd: AppRouteCommand| {
+                    let target_sink_name = match cmd.target_channel {
+                        AudioChannel::Game => "routune-game",
+                        AudioChannel::Chat => "routune-chat",
+                        AudioChannel::Media => "routune-media",
+                        AudioChannel::Aux => "routune-aux",
+                        AudioChannel::Master => "routune-game",
+                    };
+                    let target_id = t_sinks_cmd.lock().ok().and_then(|s| s.get(target_sink_name).copied());
+
+                    if let Some(ref meta) = *cmd_meta_cell.borrow() {
+                        meta.set_property(cmd.app_id, "target.object", None, Some(target_sink_name));
+                        if let Some(tid) = target_id {
+                            meta.set_property(cmd.app_id, "target.node", Some("Spa:Id"), Some(&tid.to_string()));
+                        }
+                        info!("PipeWire mainloop set metadata property for app {} -> {} (target node {:?})", cmd.app_id, target_sink_name, target_id);
+                    }
+                });
 
                 let _shutdown_sub = shutdown_receiver.attach(mainloop.loop_(), {
                     let mainloop = mainloop.clone();
@@ -437,7 +637,16 @@ impl PipeWireBridgeService {
                 connect_sink_stream!(media_stream, "media");
                 connect_sink_stream!(aux_stream, "aux");
 
-
+                if let Ok(mut sinks) = t_virtual_sinks.lock() {
+                    let g = game_stream.node_id();
+                    if g > 0 { sinks.insert("routune-game".to_string(), g); }
+                    let c = chat_stream.node_id();
+                    if c > 0 { sinks.insert("routune-chat".to_string(), c); }
+                    let m = media_stream.node_id();
+                    if m > 0 { sinks.insert("routune-media".to_string(), m); }
+                    let a = aux_stream.node_id();
+                    if a > 0 { sinks.insert("routune-aux".to_string(), a); }
+                }
 
                 let mut monitor_param = match spa::pod::Pod::from_bytes(&format_bytes) {
                     Some(p) => [p],
@@ -475,6 +684,9 @@ impl PipeWireBridgeService {
         Ok(Self {
             thread_handle: Some(thread_handle),
             shutdown_sender,
+            route_app_tx,
+            discovered_apps,
+            virtual_sinks,
             graph_controller: Arc::new(std::sync::Mutex::new(controller)),
             game_eq_tx,
             chat_eq_tx,
@@ -492,6 +704,64 @@ impl PipeWireBridgeService {
             desktop_peak,
             desktop_rms,
         })
+    }
+
+    pub fn get_active_applications(&self) -> Vec<crate::server::proto::AppStream> {
+        let sinks = self.virtual_sinks.lock().map(|s| s.clone()).unwrap_or_default();
+        if let Ok(apps) = self.discovered_apps.lock() {
+            apps.values().map(|app| app.to_proto(&sinks)).collect()
+        } else {
+            vec![]
+        }
+    }
+
+    pub fn route_application(
+        &self,
+        app_id: u32,
+        target_channel: AudioChannel,
+    ) -> Result<(), &'static str> {
+        let (target_sink_name, friendly_name) = match target_channel {
+            AudioChannel::Game => ("routune-game", "Routune Game"),
+            AudioChannel::Chat => ("routune-chat", "Routune Chat"),
+            AudioChannel::Media => ("routune-media", "Routune Media"),
+            AudioChannel::Aux => ("routune-aux", "Routune Aux"),
+            AudioChannel::Master => ("routune-game", "Routune Game"),
+        };
+
+        let target_id = self.virtual_sinks.lock().ok().and_then(|s| s.get(target_sink_name).copied());
+
+        // 1. Immediately update in-memory cache
+        if let Ok(mut apps) = self.discovered_apps.lock() {
+            if let Some(app) = apps.get_mut(&app_id) {
+                app.target_object = Some(target_sink_name.to_string());
+                app.target_node = target_id;
+            }
+        }
+
+        // 2. Dispatch to PipeWire loop
+        let cmd = AppRouteCommand {
+            app_id,
+            target_channel,
+        };
+        let _ = self.route_app_tx.send(cmd);
+
+        // 3. Fallback CLI command execution to guarantee WirePlumber relinking
+        let target_id_str = target_id.map(|i| i.to_string());
+        tokio::spawn(async move {
+            if let Some(ref tid) = target_id_str {
+                let _ = tokio::process::Command::new("pw-metadata")
+                    .args([&app_id.to_string(), "target.node", tid, "Spa:Id"])
+                    .output()
+                    .await;
+            }
+            let _ = tokio::process::Command::new("pw-metadata")
+                .args([&app_id.to_string(), "target.object", target_sink_name])
+                .output()
+                .await;
+        });
+
+        info!("Routed application {app_id} to {friendly_name} ({target_sink_name}, target node id {target_id:?})");
+        Ok(())
     }
 
     pub fn update_eq(
@@ -810,5 +1080,53 @@ mod tests {
                 eprintln!("PipeWire daemon not available in test environment: {err}");
             }
         }
+    }
+
+    #[test]
+    fn test_discovered_app_resolution() {
+        let mut sinks = std::collections::HashMap::new();
+        sinks.insert("routune-game".to_string(), 82);
+        sinks.insert("routune-chat".to_string(), 84);
+        sinks.insert("routune-media".to_string(), 89);
+        sinks.insert("routune-aux".to_string(), 106);
+
+        // 1. Resolve via target_object
+        let app1 = DiscoveredApp {
+            id: 99,
+            name: "Spotify".to_string(),
+            icon_name: "spotify-client".to_string(),
+            target_node: None,
+            target_object: Some("routune-media".to_string()),
+        };
+        let proto1 = app1.to_proto(&sinks);
+        assert_eq!(proto1.app_id, 99);
+        assert_eq!(proto1.name, "Spotify");
+        assert_eq!(proto1.icon_name, "spotify-client");
+        assert_eq!(proto1.current_sink, AudioChannel::Media as i32);
+        assert_eq!(proto1.current_sink_name, "Routune Media");
+
+        // 2. Resolve via target_node
+        let app2 = DiscoveredApp {
+            id: 101,
+            name: "Discord".to_string(),
+            icon_name: "discord".to_string(),
+            target_node: Some(84),
+            target_object: None,
+        };
+        let proto2 = app2.to_proto(&sinks);
+        assert_eq!(proto2.current_sink, AudioChannel::Chat as i32);
+        assert_eq!(proto2.current_sink_name, "Routune Chat");
+
+        // 3. Fallback default
+        let app3 = DiscoveredApp {
+            id: 102,
+            name: "GameApp".to_string(),
+            icon_name: "".to_string(),
+            target_node: None,
+            target_object: None,
+        };
+        let proto3 = app3.to_proto(&sinks);
+        assert_eq!(proto3.current_sink, AudioChannel::Master as i32);
+        assert_eq!(proto3.current_sink_name, "Default Output");
     }
 }

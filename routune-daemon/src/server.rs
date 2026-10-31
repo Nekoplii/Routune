@@ -45,6 +45,16 @@ pub trait TelemetryMetricsProvider: Send + Sync {
     ) -> Result<(), &'static str> {
         Ok(())
     }
+    fn get_active_applications(&self) -> Vec<proto::AppStream> {
+        vec![]
+    }
+    fn route_application(
+        &self,
+        _app_id: u32,
+        _target_channel: proto::AudioChannel,
+    ) -> Result<(), &'static str> {
+        Ok(())
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -76,6 +86,18 @@ impl TelemetryMetricsProvider for crate::pipewire_bridge::PipeWireBridgeService 
         gain_db: f32,
     ) -> Result<(), &'static str> {
         self.update_eq(channel, band_index, gain_db)
+    }
+
+    fn get_active_applications(&self) -> Vec<proto::AppStream> {
+        self.get_active_applications()
+    }
+
+    fn route_application(
+        &self,
+        app_id: u32,
+        target_channel: proto::AudioChannel,
+    ) -> Result<(), &'static str> {
+        self.route_application(app_id, target_channel)
     }
 }
 
@@ -238,6 +260,36 @@ impl proto::routune_control_server::RoutuneControl for ControlServiceImpl {
             config_manager.set_eq_band(virtual_channel, req.band_index as usize, clamped_gain).await;
         }
 
+        Ok(Response::new(proto::Empty {}))
+    }
+
+    async fn get_active_applications(
+        &self,
+        _request: Request<proto::Empty>,
+    ) -> Result<Response<proto::AppList>, Status> {
+        let apps = if let Some(ref provider) = self.provider {
+            provider.get_active_applications()
+        } else {
+            vec![]
+        };
+        Ok(Response::new(proto::AppList { apps }))
+    }
+
+    async fn route_application(
+        &self,
+        request: Request<proto::AppRouteRequest>,
+    ) -> Result<Response<proto::Empty>, Status> {
+        let req = request.into_inner();
+        let target_channel = match proto::AudioChannel::try_from(req.target_channel) {
+            Ok(ch) => ch,
+            Err(_) => return Err(Status::invalid_argument("Invalid audio channel")),
+        };
+
+        if let Some(ref provider) = self.provider {
+            if let Err(err) = provider.route_application(req.app_id, target_channel) {
+                return Err(Status::internal(format!("Failed to route application: {err}")));
+            }
+        }
         Ok(Response::new(proto::Empty {}))
     }
 }
@@ -636,5 +688,86 @@ mod tests {
 
         let _ = std::fs::remove_file(&cfg_path);
         let _ = std::fs::remove_dir(&temp_dir);
+    }
+
+    #[tokio::test]
+    async fn test_app_routing_and_discovery_rpc() {
+        use proto::routune_control_server::RoutuneControl;
+
+        let is_active = Arc::new(AtomicBool::new(false));
+        let (tx, _) = broadcast::channel(16);
+        let (router, _) = crate::audio::ChannelRouter::new();
+        let router = Arc::new(tokio::sync::Mutex::new(router));
+
+        struct MockAppProvider {
+            routed: std::sync::Mutex<Option<(u32, proto::AudioChannel)>>,
+        }
+
+        impl TelemetryMetricsProvider for MockAppProvider {
+            fn get_sink_metrics(&self) -> Vec<proto::SinkMetric> { vec![] }
+            fn get_topology(&self) -> Option<proto::GraphTopology> { None }
+            fn get_master_metrics(&self) -> Option<(f32, f32)> { None }
+            fn get_channel_metrics(&self) -> Vec<proto::ChannelVolumeMetric> { vec![] }
+            fn is_active(&self) -> bool { true }
+            fn get_active_applications(&self) -> Vec<proto::AppStream> {
+                vec![
+                    proto::AppStream {
+                        app_id: 94,
+                        name: "Spotify".to_string(),
+                        icon_name: "spotify-client".to_string(),
+                        current_sink: proto::AudioChannel::Media as i32,
+                        current_sink_name: "Routune Media".to_string(),
+                    }
+                ]
+            }
+            fn route_application(
+                &self,
+                app_id: u32,
+                target_channel: proto::AudioChannel,
+            ) -> Result<(), &'static str> {
+                *self.routed.lock().unwrap() = Some((app_id, target_channel));
+                Ok(())
+            }
+        }
+
+        let mock_provider = Arc::new(MockAppProvider {
+            routed: std::sync::Mutex::new(None),
+        });
+
+        let service = ControlServiceImpl::new(
+            is_active,
+            tx,
+            Some(mock_provider.clone()),
+            router,
+        );
+
+        // 1. Test GetActiveApplications
+        let list_res = service.get_active_applications(tonic::Request::new(proto::Empty {})).await;
+        assert!(list_res.is_ok());
+        let apps = list_res.unwrap().into_inner().apps;
+        assert_eq!(apps.len(), 1);
+        assert_eq!(apps[0].app_id, 94);
+        assert_eq!(apps[0].name, "Spotify");
+        assert_eq!(apps[0].current_sink, proto::AudioChannel::Media as i32);
+
+        // 2. Test RouteApplication
+        let route_req = tonic::Request::new(proto::AppRouteRequest {
+            app_id: 94,
+            target_channel: proto::AudioChannel::Game as i32,
+        });
+        let route_res = service.route_application(route_req).await;
+        assert!(route_res.is_ok());
+
+        let last_route = mock_provider.routed.lock().unwrap().take().unwrap();
+        assert_eq!(last_route.0, 94);
+        assert_eq!(last_route.1, proto::AudioChannel::Game);
+
+        // 3. Test Invalid Channel
+        let invalid_req = tonic::Request::new(proto::AppRouteRequest {
+            app_id: 94,
+            target_channel: 999,
+        });
+        let invalid_res = service.route_application(invalid_req).await;
+        assert!(invalid_res.is_err());
     }
 }
