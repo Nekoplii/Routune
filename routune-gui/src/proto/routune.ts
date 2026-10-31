@@ -85,6 +85,23 @@ export interface RouteResponse {
     activeDeviceName: string;
 }
 /**
+ * @generated from protobuf message routune.EqRequest
+ */
+export interface EqRequest {
+    /**
+     * @generated from protobuf field: routune.AudioChannel channel = 1
+     */
+    channel: AudioChannel;
+    /**
+     * @generated from protobuf field: uint32 band_index = 2
+     */
+    bandIndex: number;
+    /**
+     * @generated from protobuf field: float gain_db = 3
+     */
+    gainDb: number;
+}
+/**
  * @generated from protobuf message routune.PingRequest
  */
 export interface PingRequest {
@@ -564,6 +581,69 @@ class RouteResponse$Type extends MessageType<RouteResponse> {
  * @generated MessageType for protobuf message routune.RouteResponse
  */
 export const RouteResponse = new RouteResponse$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class EqRequest$Type extends MessageType<EqRequest> {
+    constructor() {
+        super("routune.EqRequest", [
+            { no: 1, name: "channel", kind: "enum", T: () => ["routune.AudioChannel", AudioChannel] },
+            { no: 2, name: "band_index", kind: "scalar", T: 13 /*ScalarType.UINT32*/ },
+            { no: 3, name: "gain_db", kind: "scalar", T: 2 /*ScalarType.FLOAT*/ }
+        ]);
+    }
+    create(value?: PartialMessage<EqRequest>): EqRequest {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.channel = 0;
+        message.bandIndex = 0;
+        message.gainDb = 0;
+        if (value !== undefined)
+            reflectionMergePartial<EqRequest>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: EqRequest): EqRequest {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* routune.AudioChannel channel */ 1:
+                    message.channel = reader.int32();
+                    break;
+                case /* uint32 band_index */ 2:
+                    message.bandIndex = reader.uint32();
+                    break;
+                case /* float gain_db */ 3:
+                    message.gainDb = reader.float();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: EqRequest, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* routune.AudioChannel channel = 1; */
+        if (message.channel !== 0)
+            writer.tag(1, WireType.Varint).int32(message.channel);
+        /* uint32 band_index = 2; */
+        if (message.bandIndex !== 0)
+            writer.tag(2, WireType.Varint).uint32(message.bandIndex);
+        /* float gain_db = 3; */
+        if (message.gainDb !== 0)
+            writer.tag(3, WireType.Bit32).float(message.gainDb);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message routune.EqRequest
+ */
+export const EqRequest = new EqRequest$Type();
 // @generated message type with reflection information, may provide speed optimized methods
 class PingRequest$Type extends MessageType<PingRequest> {
     constructor() {
@@ -1169,5 +1249,6 @@ export const RoutuneControl = new ServiceType("routune.RoutuneControl", [
     { name: "Ping", options: {}, I: PingRequest, O: PingResponse },
     { name: "StreamTelemetry", serverStreaming: true, options: {}, I: TelemetryRequest, O: AudioTelemetry },
     { name: "GetHardwareOutputs", options: {}, I: Empty, O: DeviceList },
-    { name: "SetChannelRouting", options: {}, I: RouteRequest, O: RouteResponse }
+    { name: "SetChannelRouting", options: {}, I: RouteRequest, O: RouteResponse },
+    { name: "SetEqBand", options: {}, I: EqRequest, O: Empty }
 ]);

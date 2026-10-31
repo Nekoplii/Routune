@@ -7,6 +7,7 @@ service RoutuneControl {
   rpc StreamTelemetry (TelemetryRequest) returns (stream AudioTelemetry);
   rpc GetHardwareOutputs (Empty) returns (DeviceList);
   rpc SetChannelRouting (RouteRequest) returns (RouteResponse);
+  rpc SetEqBand (EqRequest) returns (Empty);
 }
 
 message Empty {}
@@ -33,6 +34,12 @@ message RouteResponse {
   string message = 2;
   AudioChannel channel = 3;
   string active_device_name = 4;
+}
+
+message EqRequest {
+  AudioChannel channel = 1;
+  uint32 band_index = 2;
+  float gain_db = 3;
 }
 
 enum AudioChannel {

@@ -4,6 +4,7 @@
 import type { RpcTransport } from "@protobuf-ts/runtime-rpc";
 import type { ServiceInfo } from "@protobuf-ts/runtime-rpc";
 import { RoutuneControl } from "./routune";
+import type { EqRequest } from "./routune";
 import type { RouteResponse } from "./routune";
 import type { RouteRequest } from "./routune";
 import type { DeviceList } from "./routune";
@@ -36,6 +37,10 @@ export interface IRoutuneControlClient {
      * @generated from protobuf rpc: SetChannelRouting
      */
     setChannelRouting(input: RouteRequest, options?: RpcOptions): UnaryCall<RouteRequest, RouteResponse>;
+    /**
+     * @generated from protobuf rpc: SetEqBand
+     */
+    setEqBand(input: EqRequest, options?: RpcOptions): UnaryCall<EqRequest, Empty>;
 }
 /**
  * @generated from protobuf service routune.RoutuneControl
@@ -73,5 +78,12 @@ export class RoutuneControlClient implements IRoutuneControlClient, ServiceInfo 
     setChannelRouting(input: RouteRequest, options?: RpcOptions): UnaryCall<RouteRequest, RouteResponse> {
         const method = this.methods[3], opt = this._transport.mergeOptions(options);
         return stackIntercept<RouteRequest, RouteResponse>("unary", this._transport, method, opt, input);
+    }
+    /**
+     * @generated from protobuf rpc: SetEqBand
+     */
+    setEqBand(input: EqRequest, options?: RpcOptions): UnaryCall<EqRequest, Empty> {
+        const method = this.methods[4], opt = this._transport.mergeOptions(options);
+        return stackIntercept<EqRequest, Empty>("unary", this._transport, method, opt, input);
     }
 }
