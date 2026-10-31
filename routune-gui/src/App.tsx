@@ -1,5 +1,6 @@
 import { Header } from "./components/Header";
 import { VolumeMeter } from "./components/VolumeMeter";
+import { AppRoutingPanel } from "./components/AppRoutingPanel";
 import { ChannelRoutingPanels } from "./components/ChannelRoutingPanels";
 import { EqualizerPanel } from "./components/EqualizerPanel";
 import { DaemonStatusCard } from "./components/DaemonStatusCard";
@@ -18,6 +19,11 @@ export function App() {
         {/* Real-time Master Audio Meter */}
         <section>
           <VolumeMeter />
+        </section>
+
+        {/* Sonar Application-Level Routing (Drag & Drop Active App Streams) */}
+        <section>
+          <AppRoutingPanel />
         </section>
 
         {/* Sonar Channel Routing & Real-time Telemetry (4 Channels) */}

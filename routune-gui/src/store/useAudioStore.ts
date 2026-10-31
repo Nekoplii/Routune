@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { ChannelVolumeMetric, OutputDeviceInfo } from "../proto/routune";
+import type { AppStream, ChannelVolumeMetric, OutputDeviceInfo } from "../proto/routune";
 import { AudioChannel } from "../proto/routune";
 import { routuneClient } from "../services/grpcClient";
 
@@ -22,6 +22,10 @@ interface AudioStoreState {
   channelRoutings: Record<number, string>;
   isRoutingUpdating: Record<number, boolean>;
 
+  // Application routing (Sonar app assignment)
+  activeApps: AppStream[];
+  isRoutingApp: Record<number, boolean>;
+
   // 10-Band Parametric Equalizer State
   selectedEqChannel: AudioChannel;
   eqBands: Record<number, number[]>;
@@ -38,6 +42,8 @@ interface AudioStoreState {
   ) => void;
   resetTelemetry: () => void;
   fetchHardwareOutputs: () => Promise<void>;
+  fetchActiveApps: () => Promise<void>;
+  routeApplication: (appId: number, targetChannel: AudioChannel) => Promise<boolean>;
   setChannelRouting: (channel: AudioChannel, deviceName: string) => Promise<boolean>;
   setSelectedEqChannel: (channel: AudioChannel) => void;
   setEqBandGain: (channel: AudioChannel, bandIndex: number, gainDb: number) => void;
@@ -65,6 +71,9 @@ export const useAudioStore = create<AudioStoreState>((set) => ({
     [AudioChannel.AUX]: "none",
   },
   isRoutingUpdating: {},
+
+  activeApps: [],
+  isRoutingApp: {},
 
   selectedEqChannel: AudioChannel.GAME,
   eqBands: {
@@ -110,6 +119,76 @@ export const useAudioStore = create<AudioStoreState>((set) => ({
       set({ hardwareOutputs: res.devices });
     } catch (err: unknown) {
       console.warn("Failed to fetch hardware outputs:", err);
+    }
+  },
+
+  fetchActiveApps: async () => {
+    try {
+      const call = routuneClient.getActiveApplications({});
+      const res = await call.response;
+      set((s) => {
+        // Compare to prevent unnecessary React re-renders when state is unchanged
+        if (s.activeApps.length === res.apps.length) {
+          const isIdentical = s.activeApps.every((existing, idx) => {
+            const incoming = res.apps[idx];
+            return (
+              incoming &&
+              existing.appId === incoming.appId &&
+              existing.name === incoming.name &&
+              existing.currentSink === incoming.currentSink &&
+              existing.currentSinkName === incoming.currentSinkName &&
+              existing.iconName === incoming.iconName
+            );
+          });
+          if (isIdentical) {
+            return s;
+          }
+        }
+        return { activeApps: res.apps };
+      });
+    } catch (err: unknown) {
+      console.warn("Failed to fetch active applications:", err);
+    }
+  },
+
+  routeApplication: async (appId: number, targetChannel: AudioChannel) => {
+    const prevApps = useAudioStore.getState().activeApps;
+    const targetSinkName =
+      targetChannel === AudioChannel.GAME
+        ? "Routune Game"
+        : targetChannel === AudioChannel.CHAT
+        ? "Routune Chat"
+        : targetChannel === AudioChannel.MEDIA
+        ? "Routune Media"
+        : targetChannel === AudioChannel.AUX
+        ? "Routune Aux"
+        : "Default Output";
+
+    // Optimistically update activeApps state
+    set((s) => ({
+      isRoutingApp: { ...s.isRoutingApp, [appId]: true },
+      activeApps: s.activeApps.map((app) =>
+        app.appId === appId
+          ? { ...app, currentSink: targetChannel, currentSinkName: targetSinkName }
+          : app
+      ),
+    }));
+
+    try {
+      const call = routuneClient.routeApplication({ appId, targetChannel });
+      await call.response;
+      set((s) => ({
+        isRoutingApp: { ...s.isRoutingApp, [appId]: false },
+      }));
+      return true;
+    } catch (err: unknown) {
+      console.warn(`Failed to route app ${appId} to ${targetChannel}:`, err);
+      // Revert optimistic update on failure
+      set((s) => ({
+        activeApps: prevApps,
+        isRoutingApp: { ...s.isRoutingApp, [appId]: false },
+      }));
+      return false;
     }
   },
 
@@ -180,3 +259,5 @@ export const selectTelemetry = (state: AudioStoreState) => ({
   sequenceNumber: state.sequenceNumber,
   channelMetrics: state.channelMetrics,
 });
+export const selectActiveApps = (state: AudioStoreState) => state.activeApps;
+export const selectIsRoutingApp = (state: AudioStoreState) => state.isRoutingApp;
