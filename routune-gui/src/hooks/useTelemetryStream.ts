@@ -35,6 +35,9 @@ export function useTelemetryStream() {
         setAudioActive(pingRes.audioActive);
         setConnectionStatus("connected");
 
+        // Fetch physical hardware output devices for Sonar routing dropdowns
+        useAudioStore.getState().fetchHardwareOutputs();
+
         // 2. Consume server-streaming telemetry
         const streamCall = routuneClient.streamTelemetry(
           { targetFps: 60 },
@@ -46,7 +49,8 @@ export function useTelemetryStream() {
           updateTelemetry(
             chunk.peakVolumeDb,
             chunk.rmsVolumeDb,
-            chunk.sequenceNumber
+            chunk.sequenceNumber.toString(),
+            chunk.channelMetrics
           );
         }
 

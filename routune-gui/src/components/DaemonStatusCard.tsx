@@ -5,6 +5,7 @@ export function DaemonStatusCard() {
   const isAudioActive = useAudioStore((s) => s.isAudioActive);
   const status = useAudioStore((s) => s.connectionStatus);
   const lastError = useAudioStore((s) => s.lastError);
+  const channelMetrics = useAudioStore((s) => s.channelMetrics);
 
   return (
     <div className="flex flex-col rounded-xl border border-neutral-800 bg-neutral-900/40 p-5">
@@ -56,6 +57,44 @@ export function DaemonStatusCard() {
           {lastError}
         </div>
       )}
+
+      {/* 5-Channel Telemetry IPC Dump */}
+      <div className="mt-4 rounded-lg border border-neutral-800 bg-neutral-950/80 p-3">
+        <div className="flex items-center justify-between border-b border-neutral-800 pb-1.5 text-[11px] font-semibold text-neutral-400 uppercase tracking-wider">
+          <span>5-Channel Telemetry</span>
+          <span className="font-mono text-cyan-400">
+            {channelMetrics.length > 0 ? `${channelMetrics.length} Channels` : "Idle"}
+          </span>
+        </div>
+        <div className="mt-2 space-y-1 font-mono text-[11px]">
+          {channelMetrics.length === 0 ? (
+            <div className="text-neutral-600 italic">Waiting for telemetry stream...</div>
+          ) : (
+            channelMetrics.map((ch) => (
+              <div
+                key={ch.channelName || ch.channel}
+                className="flex justify-between items-center text-neutral-300"
+              >
+                <span className="text-neutral-400">{ch.channelName}:</span>
+                <span className="text-emerald-400">
+                  Peak: {ch.peakVolumeDb.toFixed(1)} dB
+                </span>
+                <span className="text-cyan-400">
+                  RMS: {ch.rmsVolumeDb.toFixed(1)} dB
+                </span>
+              </div>
+            ))
+          )}
+        </div>
+        {channelMetrics.length > 0 && (
+          <details className="mt-2 text-[10px] text-neutral-500 font-mono">
+            <summary className="cursor-pointer hover:text-neutral-400">Raw IPC JSON</summary>
+            <pre className="mt-1 max-h-32 overflow-auto text-neutral-400 bg-neutral-900/60 p-1.5 rounded">
+              {JSON.stringify(channelMetrics, null, 2)}
+            </pre>
+          </details>
+        )}
+      </div>
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { Header } from "./components/Header";
 import { VolumeMeter } from "./components/VolumeMeter";
+import { ChannelRoutingPanels } from "./components/ChannelRoutingPanels";
 import { DaemonStatusCard } from "./components/DaemonStatusCard";
 import { useTelemetryStream } from "./hooks/useTelemetryStream";
 import { Sliders, Activity } from "lucide-react";
@@ -13,9 +14,14 @@ export function App() {
       <Header />
 
       <main className="flex-1 overflow-y-auto p-6 space-y-6 max-w-6xl w-full mx-auto">
-        {/* Real-time Meter (High-Frequency Localized Render) */}
+        {/* Real-time Master Audio Meter */}
         <section>
           <VolumeMeter />
+        </section>
+
+        {/* Sonar Channel Routing & Real-time Telemetry (4 Channels) */}
+        <section>
+          <ChannelRoutingPanels />
         </section>
 
         {/* System & Architecture Grid */}
