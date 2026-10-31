@@ -1,9 +1,9 @@
 pub mod graph;
 
 pub use graph::{
-    AudioEngineGraph, AudioNode, BypassNode, DspBypassNode, Graph, GraphCommand,
+    AudioEngineGraph, AudioNode, BypassNode, Channel, DspBypassNode, EqNode, Graph, GraphCommand,
     GraphController, NodeInfo, PhysicalOutputNode, PipeWireInputNode, ProcessContext,
-    VirtualInputNode,
+    VirtualChannel, VirtualInputNode, DEFAULT_EQ_Q, EQ_BANDS_COUNT, EQ_FREQUENCIES_HZ,
 };
 
 use serde::{Deserialize, Serialize};

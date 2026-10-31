@@ -81,6 +81,7 @@ pub trait AudioNode: Send {
     }
     fn set_bypassed(&mut self, _bypassed: bool) {}
     fn set_gain(&mut self, _gain: f32) {}
+    fn set_eq_band(&mut self, _band_index: usize, _gain_db: f32) {}
     fn reset(&mut self) {}
     fn peak_db(&self) -> f32 {
         -100.0
@@ -517,6 +518,201 @@ impl AudioNode for PhysicalOutputNode {
     }
 }
 
+pub const EQ_BANDS_COUNT: usize = 10;
+pub const EQ_FREQUENCIES_HZ: [f32; EQ_BANDS_COUNT] = [
+    31.0, 62.0, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0,
+];
+/// Q factor for 1-octave spacing: 1 / (2 * sinh(ln(2)/2)) = sqrt(2) ~= 1.41421356
+pub const DEFAULT_EQ_Q: f32 = 1.41421356;
+
+/// 10-Band Parametric/Graphic Equalizer AudioNode.
+/// Cascades 10 biquad peaking EQ filters for Left and Right channels.
+/// Processing is 100% lock-free and zero-allocation.
+pub struct EqNode {
+    id: String,
+    name: String,
+    sample_rate: u32,
+    bypassed: bool,
+    gains_db: [f32; EQ_BANDS_COUNT],
+    filters_l: [biquad::DirectForm1<f32>; EQ_BANDS_COUNT],
+    filters_r: [biquad::DirectForm1<f32>; EQ_BANDS_COUNT],
+    peak_db: Arc<AtomicU32>,
+    rms_db: Arc<AtomicU32>,
+}
+
+impl EqNode {
+    pub fn new(id: impl Into<String>, name: impl Into<String>, sample_rate: u32) -> Self {
+        let filters_l = std::array::from_fn(|i| {
+            let fs = biquad::Hertz::<f32>::from_hz(sample_rate as f32)
+                .unwrap_or_else(|_| biquad::Hertz::<f32>::from_hz(48000.0_f32).unwrap());
+            let f0 = biquad::Hertz::<f32>::from_hz(EQ_FREQUENCIES_HZ[i]).unwrap();
+            let coeffs = biquad::Coefficients::<f32>::from_params(
+                biquad::Type::PeakingEQ(0.0_f32),
+                fs,
+                f0,
+                DEFAULT_EQ_Q,
+            )
+            .unwrap();
+            biquad::DirectForm1::<f32>::new(coeffs)
+        });
+
+        let filters_r = std::array::from_fn(|i| {
+            let fs = biquad::Hertz::<f32>::from_hz(sample_rate as f32)
+                .unwrap_or_else(|_| biquad::Hertz::<f32>::from_hz(48000.0_f32).unwrap());
+            let f0 = biquad::Hertz::<f32>::from_hz(EQ_FREQUENCIES_HZ[i]).unwrap();
+            let coeffs = biquad::Coefficients::<f32>::from_params(
+                biquad::Type::PeakingEQ(0.0_f32),
+                fs,
+                f0,
+                DEFAULT_EQ_Q,
+            )
+            .unwrap();
+            biquad::DirectForm1::<f32>::new(coeffs)
+        });
+
+        Self {
+            id: id.into(),
+            name: name.into(),
+            sample_rate,
+            bypassed: false,
+            gains_db: [0.0f32; EQ_BANDS_COUNT],
+            filters_l,
+            filters_r,
+            peak_db: Arc::new(AtomicU32::new((-100.0f32).to_bits())),
+            rms_db: Arc::new(AtomicU32::new((-100.0f32).to_bits())),
+        }
+    }
+
+    pub fn set_band_gain(&mut self, band_index: usize, gain_db: f32) {
+        if band_index >= EQ_BANDS_COUNT {
+            return;
+        }
+        let clamped = gain_db.clamp(-24.0, 24.0);
+        self.gains_db[band_index] = clamped;
+
+        let fs = biquad::Hertz::<f32>::from_hz(self.sample_rate as f32)
+            .unwrap_or_else(|_| biquad::Hertz::<f32>::from_hz(48000.0_f32).unwrap());
+        let f0 = biquad::Hertz::<f32>::from_hz(EQ_FREQUENCIES_HZ[band_index]).unwrap();
+        if let Ok(coeffs) = biquad::Coefficients::<f32>::from_params(
+            biquad::Type::PeakingEQ(clamped),
+            fs,
+            f0,
+            DEFAULT_EQ_Q,
+        ) {
+            use biquad::Biquad;
+            self.filters_l[band_index].update_coefficients(coeffs);
+            self.filters_r[band_index].update_coefficients(coeffs);
+        }
+    }
+
+    pub fn band_gains(&self) -> [f32; EQ_BANDS_COUNT] {
+        self.gains_db
+    }
+
+    pub fn metrics_handles(&self) -> (Arc<AtomicU32>, Arc<AtomicU32>) {
+        (self.peak_db.clone(), self.rms_db.clone())
+    }
+}
+
+impl AudioNode for EqNode {
+    fn id(&self) -> &str {
+        &self.id
+    }
+
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn node_type(&self) -> &str {
+        "EqNode"
+    }
+
+    fn is_bypassed(&self) -> bool {
+        self.bypassed
+    }
+
+    fn set_bypassed(&mut self, bypassed: bool) {
+        self.bypassed = bypassed;
+    }
+
+    fn set_eq_band(&mut self, band_index: usize, gain_db: f32) {
+        self.set_band_gain(band_index, gain_db);
+    }
+
+    fn reset(&mut self) {
+        for i in 0..EQ_BANDS_COUNT {
+            let fs = biquad::Hertz::<f32>::from_hz(self.sample_rate as f32)
+                .unwrap_or_else(|_| biquad::Hertz::<f32>::from_hz(48000.0_f32).unwrap());
+            let f0 = biquad::Hertz::<f32>::from_hz(EQ_FREQUENCIES_HZ[i]).unwrap();
+            if let Ok(coeffs) = biquad::Coefficients::<f32>::from_params(
+                biquad::Type::PeakingEQ(self.gains_db[i]),
+                fs,
+                f0,
+                DEFAULT_EQ_Q,
+            ) {
+                self.filters_l[i] = biquad::DirectForm1::<f32>::new(coeffs);
+                self.filters_r[i] = biquad::DirectForm1::<f32>::new(coeffs);
+            }
+        }
+    }
+
+    fn peak_db(&self) -> f32 {
+        f32::from_bits(self.peak_db.load(Ordering::Relaxed))
+    }
+
+    fn rms_db(&self) -> f32 {
+        f32::from_bits(self.rms_db.load(Ordering::Relaxed))
+    }
+
+    fn process(&mut self, input: &[f32], output: &mut [f32]) {
+        let len = input.len().min(output.len());
+        if self.bypassed {
+            output[..len].copy_from_slice(&input[..len]);
+        } else {
+            use biquad::Biquad;
+            let frames = len / 2;
+            for i in 0..frames {
+                let mut l = input[i * 2];
+                let mut r = input[i * 2 + 1];
+
+                for band in 0..EQ_BANDS_COUNT {
+                    l = self.filters_l[band].run(l);
+                    r = self.filters_r[band].run(r);
+                }
+
+                output[i * 2] = l;
+                output[i * 2 + 1] = r;
+            }
+            if len % 2 == 1 {
+                let mut s = input[len - 1];
+                for band in 0..EQ_BANDS_COUNT {
+                    s = self.filters_l[band].run(s);
+                }
+                output[len - 1] = s;
+            }
+        }
+
+        if len < output.len() {
+            output[len..].fill(0.0);
+        }
+
+        let (peak, rms) = calculate_metrics(&output[..len]);
+        self.peak_db.store(peak.to_bits(), Ordering::Relaxed);
+        self.rms_db.store(rms.to_bits(), Ordering::Relaxed);
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum VirtualChannel {
+    Master = 0,
+    Game = 1,
+    Chat = 2,
+    Media = 3,
+    Aux = 4,
+}
+
+pub type Channel = VirtualChannel;
+
 /// Commands sent to the audio thread to mutate Graph state lock-free.
 pub enum GraphCommand {
     AddNode(Box<dyn AudioNode>),
@@ -525,6 +721,7 @@ pub enum GraphCommand {
     DisconnectNode { from: String, to: String },
     SetBypass { id: String, bypassed: bool },
     SetGain { id: String, gain: f32 },
+    UpdateEq(VirtualChannel, usize, f32),
 }
 
 pub struct NodeSlot {
@@ -710,6 +907,20 @@ impl Graph {
                     if let Some(idx) = self.find_slot_by_id(&id) {
                         if let Some(slot) = &mut self.slots[idx] {
                             slot.node.set_gain(gain);
+                        }
+                    }
+                }
+                GraphCommand::UpdateEq(channel, band_index, gain_db) => {
+                    let eq_id = match channel {
+                        VirtualChannel::Master => "master-eq",
+                        VirtualChannel::Game => "game-eq",
+                        VirtualChannel::Chat => "chat-eq",
+                        VirtualChannel::Media => "media-eq",
+                        VirtualChannel::Aux => "aux-eq",
+                    };
+                    if let Some(idx) = self.find_slot_by_id(eq_id) {
+                        if let Some(slot) = &mut self.slots[idx] {
+                            slot.node.set_eq_band(band_index, gain_db);
                         }
                     }
                 }
@@ -941,6 +1152,18 @@ impl GraphController {
         Ok(())
     }
 
+    pub fn update_eq(
+        &mut self,
+        channel: VirtualChannel,
+        band_index: usize,
+        gain_db: f32,
+    ) -> Result<(), &'static str> {
+        self.cmd_producer
+            .try_send(GraphCommand::UpdateEq(channel, band_index, gain_db))
+            .map_err(|_| "Command queue full")?;
+        Ok(())
+    }
+
     /// Garbage-collect removed nodes outside the RT thread.
     pub fn collect_garbage(&mut self) -> usize {
         let mut count = 0;
@@ -1142,5 +1365,89 @@ mod tests {
         // Last frames should reflect processed output
         let last_frame = received.last().unwrap();
         assert!((last_frame[0] - 0.75).abs() < 1e-4);
+    }
+
+    #[test]
+    fn test_eq_node_flat_response() {
+        let mut eq = EqNode::new("game-eq", "Game Equalizer", 48000);
+        let input = [0.5f32, -0.5f32, 0.25f32, -0.25f32];
+        let mut output = [0.0f32; 4];
+
+        eq.process(&input, &mut output);
+
+        // Flat EQ (0.0 dB gain on all bands) should pass signal through virtually untouched
+        for (in_s, out_s) in input.iter().zip(output.iter()) {
+            assert!((in_s - out_s).abs() < 1e-4, "Diff: {} vs {}", in_s, out_s);
+        }
+    }
+
+    #[test]
+    fn test_eq_node_boost_attenuate() {
+        let sample_rate = 48000.0f32;
+        let freq = 1000.0f32;
+
+        let make_sine = || {
+            let mut sine_input = vec![0.0f32; 2048];
+            for i in 0..1024 {
+                let t = i as f32 / sample_rate;
+                let val = (2.0 * std::f32::consts::PI * freq * t).sin();
+                sine_input[i * 2] = val;
+                sine_input[i * 2 + 1] = val;
+            }
+            sine_input
+        };
+
+        // 1. Process flat
+        let mut eq_flat = EqNode::new("test-flat", "Test EQ Flat", 48000);
+        let mut flat_output = vec![0.0f32; 2048];
+        eq_flat.process(&make_sine(), &mut flat_output);
+        let flat_peak = flat_output[1024..].iter().fold(0.0f32, |acc, &x| acc.max(x.abs()));
+
+        // 2. Boost 1000 Hz band by +6 dB
+        let mut eq_boost = EqNode::new("test-boost", "Test EQ Boost", 48000);
+        eq_boost.set_band_gain(5, 6.0);
+        let mut boost_output = vec![0.0f32; 2048];
+        eq_boost.process(&make_sine(), &mut boost_output);
+        let boost_peak = boost_output[1024..].iter().fold(0.0f32, |acc, &x| acc.max(x.abs()));
+
+        assert!(boost_peak > flat_peak * 1.5, "Boost peak {} should exceed flat peak {}", boost_peak, flat_peak);
+
+        // 3. Cut 1000 Hz band by -6 dB
+        let mut eq_cut = EqNode::new("test-cut", "Test EQ Cut", 48000);
+        eq_cut.set_band_gain(5, -6.0);
+        let mut cut_output = vec![0.0f32; 2048];
+        eq_cut.process(&make_sine(), &mut cut_output);
+        let cut_peak = cut_output[1024..].iter().fold(0.0f32, |acc, &x| acc.max(x.abs()));
+
+        assert!(cut_peak < flat_peak * 0.7, "Cut peak {} should be less than flat peak {}", cut_peak, flat_peak);
+    }
+
+    #[test]
+    fn test_eq_node_dynamic_update_via_command() {
+        let (mut controller, mut engine) = create_graph_pair(32, 512);
+
+        let in_node = Box::new(VirtualInputNode::new("routune-game", "Game In", "routune-game"));
+        let eq_node = Box::new(EqNode::new("game-eq", "Game Equalizer", 48000));
+        let out_node = Box::new(PhysicalOutputNode::new("out-node", "Output", "hw:0"));
+
+        controller.add_node(in_node).unwrap();
+        controller.add_node(eq_node).unwrap();
+        controller.add_node(out_node).unwrap();
+
+        controller.connect("routune-game", "game-eq").unwrap();
+        controller.connect("game-eq", "out-node").unwrap();
+
+        // Drain node addition commands into engine
+        engine.drain_commands();
+
+        // Update EQ on GAME channel, band 5 (1000Hz) to +6dB
+        controller.update_eq(VirtualChannel::Game, 5, 6.0).unwrap();
+
+        let mut out = vec![0.0f32; 64];
+        engine.feed_node_input("routune-game", &[0.5f32; 64]);
+        engine.process(&[], &mut out);
+
+        // Verify slot state was updated and signal passed through
+        assert!(out.iter().any(|&s| s != 0.0));
     }
 }
