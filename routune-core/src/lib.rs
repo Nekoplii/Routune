@@ -1,5 +1,7 @@
+pub mod config;
 pub mod graph;
 
+pub use config::{ChannelEqConfig, ChannelRoutingConfig, RoutuneConfig};
 pub use graph::{
     AudioEngineGraph, AudioNode, BypassNode, Channel, DspBypassNode, EqNode, Graph, GraphCommand,
     GraphController, NodeInfo, PhysicalOutputNode, PipeWireInputNode, ProcessContext,

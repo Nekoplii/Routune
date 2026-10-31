@@ -1,0 +1,208 @@
+use std::fs;
+use std::io;
+use std::path::Path;
+use serde::{Deserialize, Serialize};
+
+use crate::graph::{VirtualChannel, EQ_BANDS_COUNT};
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChannelRoutingConfig {
+    pub game: String,
+    pub chat: String,
+    pub media: String,
+    pub aux: String,
+}
+
+impl Default for ChannelRoutingConfig {
+    fn default() -> Self {
+        Self {
+            game: "none".to_string(),
+            chat: "none".to_string(),
+            media: "none".to_string(),
+            aux: "none".to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ChannelEqConfig {
+    pub game: [f32; EQ_BANDS_COUNT],
+    pub chat: [f32; EQ_BANDS_COUNT],
+    pub media: [f32; EQ_BANDS_COUNT],
+    pub aux: [f32; EQ_BANDS_COUNT],
+}
+
+impl Default for ChannelEqConfig {
+    fn default() -> Self {
+        Self {
+            game: [0.0f32; EQ_BANDS_COUNT],
+            chat: [0.0f32; EQ_BANDS_COUNT],
+            media: [0.0f32; EQ_BANDS_COUNT],
+            aux: [0.0f32; EQ_BANDS_COUNT],
+        }
+    }
+}
+
+/// Persistent configuration for Routune daemon state.
+/// Holds hardware device mappings and 10-band EQ settings per channel.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct RoutuneConfig {
+    pub routing: ChannelRoutingConfig,
+    pub eq: ChannelEqConfig,
+}
+
+impl RoutuneConfig {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn get_route(&self, channel: VirtualChannel) -> &str {
+        match channel {
+            VirtualChannel::Game => &self.routing.game,
+            VirtualChannel::Chat => &self.routing.chat,
+            VirtualChannel::Media => &self.routing.media,
+            VirtualChannel::Aux => &self.routing.aux,
+            VirtualChannel::Master => "none",
+        }
+    }
+
+    pub fn set_route(&mut self, channel: VirtualChannel, device: impl Into<String>) {
+        let val = device.into();
+        match channel {
+            VirtualChannel::Game => self.routing.game = val,
+            VirtualChannel::Chat => self.routing.chat = val,
+            VirtualChannel::Media => self.routing.media = val,
+            VirtualChannel::Aux => self.routing.aux = val,
+            VirtualChannel::Master => {}
+        }
+    }
+
+    pub fn get_eq(&self, channel: VirtualChannel) -> [f32; EQ_BANDS_COUNT] {
+        match channel {
+            VirtualChannel::Game => self.eq.game,
+            VirtualChannel::Chat => self.eq.chat,
+            VirtualChannel::Media => self.eq.media,
+            VirtualChannel::Aux => self.eq.aux,
+            VirtualChannel::Master => [0.0f32; EQ_BANDS_COUNT],
+        }
+    }
+
+    pub fn set_eq_band(&mut self, channel: VirtualChannel, band_index: usize, gain_db: f32) {
+        if band_index >= EQ_BANDS_COUNT {
+            return;
+        }
+        let clamped = gain_db.clamp(-24.0, 24.0);
+        match channel {
+            VirtualChannel::Game => self.eq.game[band_index] = clamped,
+            VirtualChannel::Chat => self.eq.chat[band_index] = clamped,
+            VirtualChannel::Media => self.eq.media[band_index] = clamped,
+            VirtualChannel::Aux => self.eq.aux[band_index] = clamped,
+            VirtualChannel::Master => {
+                self.eq.game[band_index] = clamped;
+                self.eq.chat[band_index] = clamped;
+                self.eq.media[band_index] = clamped;
+                self.eq.aux[band_index] = clamped;
+            }
+        }
+    }
+
+    pub fn set_eq(&mut self, channel: VirtualChannel, gains: [f32; EQ_BANDS_COUNT]) {
+        match channel {
+            VirtualChannel::Game => self.eq.game = gains,
+            VirtualChannel::Chat => self.eq.chat = gains,
+            VirtualChannel::Media => self.eq.media = gains,
+            VirtualChannel::Aux => self.eq.aux = gains,
+            VirtualChannel::Master => {
+                self.eq.game = gains;
+                self.eq.chat = gains;
+                self.eq.media = gains;
+                self.eq.aux = gains;
+            }
+        }
+    }
+
+    /// Load configuration from a JSON file, or return default template if not found.
+    pub fn load_or_default(path: impl AsRef<Path>) -> Self {
+        let path = path.as_ref();
+        if path.exists() {
+            match fs::read_to_string(path) {
+                Ok(content) => match serde_json::from_str(&content) {
+                    Ok(cfg) => return cfg,
+                    Err(e) => {
+                        eprintln!("Failed to parse config at {:?}: {}, using defaults", path, e);
+                    }
+                },
+                Err(e) => {
+                    eprintln!("Failed to read config at {:?}: {}, using defaults", path, e);
+                }
+            }
+        }
+        Self::default()
+    }
+
+    /// Save configuration atomically to disk using a temporary file.
+    pub fn save_to_file(&self, path: impl AsRef<Path>) -> io::Result<()> {
+        let path = path.as_ref();
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let json = serde_json::to_string_pretty(self)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+
+        let tmp_path = path.with_extension("tmp");
+        fs::write(&tmp_path, json)?;
+        fs::rename(tmp_path, path)?;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_routune_config_defaults() {
+        let cfg = RoutuneConfig::default();
+        assert_eq!(cfg.get_route(VirtualChannel::Game), "none");
+        assert_eq!(cfg.get_route(VirtualChannel::Chat), "none");
+        assert_eq!(cfg.get_route(VirtualChannel::Media), "none");
+        assert_eq!(cfg.get_route(VirtualChannel::Aux), "none");
+
+        assert_eq!(cfg.get_eq(VirtualChannel::Game), [0.0; EQ_BANDS_COUNT]);
+    }
+
+    #[test]
+    fn test_routune_config_mutations() {
+        let mut cfg = RoutuneConfig::new();
+        cfg.set_route(VirtualChannel::Game, "USB Headset");
+        cfg.set_eq_band(VirtualChannel::Game, 5, 4.5);
+
+        assert_eq!(cfg.get_route(VirtualChannel::Game), "USB Headset");
+        assert_eq!(cfg.get_eq(VirtualChannel::Game)[5], 4.5);
+
+        // Clamp check
+        cfg.set_eq_band(VirtualChannel::Chat, 2, 99.0);
+        assert_eq!(cfg.get_eq(VirtualChannel::Chat)[2], 24.0);
+    }
+
+    #[test]
+    fn test_routune_config_save_and_load() {
+        let temp_dir = std::env::temp_dir().join("routune_test_config");
+        let config_file = temp_dir.join("config.json");
+
+        let mut cfg = RoutuneConfig::new();
+        cfg.set_route(VirtualChannel::Media, "Speakers");
+        cfg.set_eq_band(VirtualChannel::Media, 0, -3.0);
+        cfg.set_eq_band(VirtualChannel::Media, 9, 6.0);
+
+        cfg.save_to_file(&config_file).expect("Failed to save config");
+
+        let loaded = RoutuneConfig::load_or_default(&config_file);
+        assert_eq!(loaded.get_route(VirtualChannel::Media), "Speakers");
+        assert_eq!(loaded.get_eq(VirtualChannel::Media)[0], -3.0);
+        assert_eq!(loaded.get_eq(VirtualChannel::Media)[9], 6.0);
+
+        let _ = fs::remove_file(&config_file);
+        let _ = fs::remove_dir(&temp_dir);
+    }
+}
