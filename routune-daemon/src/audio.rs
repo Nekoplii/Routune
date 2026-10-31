@@ -366,6 +366,7 @@ impl ChannelRouter {
             channel_name: "Master".to_string(),
             peak_volume_db: m_peak,
             rms_volume_db: m_rms,
+            ai_noise_enabled: false,
         }];
 
         for ch in [1, 2, 3, 4] {
@@ -377,6 +378,7 @@ impl ChannelRouter {
                     channel_name: r.channel_name.clone(),
                     peak_volume_db: p,
                     rms_volume_db: r_val,
+                    ai_noise_enabled: false,
                 });
             }
         }

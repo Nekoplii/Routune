@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::thread::JoinHandle;
 use tracing::info;
 
+use routune_core::ai_noise::AiNoiseNode;
 use routune_core::config::RoutuneConfig;
 use routune_core::graph::{
     calculate_metrics, AudioEngineGraph, AudioNode, DspBypassNode, EqNode, GraphCommand,
@@ -80,9 +81,12 @@ struct VirtualSinkUserData {
     peak_db: Arc<AtomicU32>,
     rms_db: Arc<AtomicU32>,
     is_active: Arc<AtomicBool>,
+    noise_enabled: Arc<AtomicBool>,
+    ai_noise_node: AiNoiseNode,
     eq_node: EqNode,
     cmd_rx: crossbeam_channel::Receiver<GraphCommand>,
     scratch_buf: Box<[f32; SCRATCH_BUFFER_SAMPLES]>,
+    scratch_buf_2: Box<[f32; SCRATCH_BUFFER_SAMPLES]>,
 }
 
 struct DesktopMonitorUserData {
@@ -113,6 +117,10 @@ pub struct PipeWireBridgeService {
     pub aux_rms: Arc<AtomicU32>,
     pub desktop_peak: Arc<AtomicU32>,
     pub desktop_rms: Arc<AtomicU32>,
+    pub game_noise_enabled: Arc<AtomicBool>,
+    pub chat_noise_enabled: Arc<AtomicBool>,
+    pub media_noise_enabled: Arc<AtomicBool>,
+    pub aux_noise_enabled: Arc<AtomicBool>,
 }
 
 impl PipeWireBridgeService {
@@ -145,6 +153,11 @@ impl PipeWireBridgeService {
         let desktop_peak = Arc::new(AtomicU32::new((-100.0f32).to_bits()));
         let desktop_rms = Arc::new(AtomicU32::new((-100.0f32).to_bits()));
 
+        let game_noise_enabled = Arc::new(AtomicBool::new(config.map(|c| c.get_noise_cancellation(VirtualChannel::Game)).unwrap_or(false)));
+        let chat_noise_enabled = Arc::new(AtomicBool::new(config.map(|c| c.get_noise_cancellation(VirtualChannel::Chat)).unwrap_or(false)));
+        let media_noise_enabled = Arc::new(AtomicBool::new(config.map(|c| c.get_noise_cancellation(VirtualChannel::Media)).unwrap_or(false)));
+        let aux_noise_enabled = Arc::new(AtomicBool::new(config.map(|c| c.get_noise_cancellation(VirtualChannel::Aux)).unwrap_or(false)));
+
         let (game_eq_tx, game_eq_rx) = crossbeam_channel::bounded(64);
         let (chat_eq_tx, chat_eq_rx) = crossbeam_channel::bounded(64);
         let (media_eq_tx, media_eq_rx) = crossbeam_channel::bounded(64);
@@ -152,14 +165,18 @@ impl PipeWireBridgeService {
 
         // Setup default graph: 4 independent channel chains -> channel-specific PhysicalOutputNode
         let channels = [
-            ("routune-game", "Routune Game", "game-eq", "Game Equalizer", "game-resampler", "Game Resampler", "game-bypass", "Game DSP Bypass", "game-output", "Game Output", VirtualChannel::Game),
-            ("routune-chat", "Routune Chat", "chat-eq", "Chat Equalizer", "chat-resampler", "Chat Resampler", "chat-bypass", "Chat DSP Bypass", "chat-output", "Chat Output", VirtualChannel::Chat),
-            ("routune-media", "Routune Media", "media-eq", "Media Equalizer", "media-resampler", "Media Resampler", "media-bypass", "Media DSP Bypass", "media-output", "Media Output", VirtualChannel::Media),
-            ("routune-aux", "Routune Aux", "aux-eq", "Aux Equalizer", "aux-resampler", "Aux Resampler", "aux-bypass", "Aux DSP Bypass", "aux-output", "Aux Output", VirtualChannel::Aux),
+            ("routune-game", "Routune Game", "game-noise", "Game AI Noise", "game-eq", "Game Equalizer", "game-resampler", "Game Resampler", "game-bypass", "Game DSP Bypass", "game-output", "Game Output", VirtualChannel::Game),
+            ("routune-chat", "Routune Chat", "chat-noise", "Chat AI Noise", "chat-eq", "Chat Equalizer", "chat-resampler", "Chat Resampler", "chat-bypass", "Chat DSP Bypass", "chat-output", "Chat Output", VirtualChannel::Chat),
+            ("routune-media", "Routune Media", "media-noise", "Media AI Noise", "media-eq", "Media Equalizer", "media-resampler", "Media Resampler", "media-bypass", "Media DSP Bypass", "media-output", "Media Output", VirtualChannel::Media),
+            ("routune-aux", "Routune Aux", "aux-noise", "Aux AI Noise", "aux-eq", "Aux Equalizer", "aux-resampler", "Aux Resampler", "aux-bypass", "Aux DSP Bypass", "aux-output", "Aux Output", VirtualChannel::Aux),
         ];
 
-        for (in_id, in_name, eq_id, eq_name, resamp_id, resamp_name, bypass_id, bypass_name, out_id, out_name, v_ch) in channels {
+        for (in_id, in_name, noise_id, noise_name, eq_id, eq_name, resamp_id, resamp_name, bypass_id, bypass_name, out_id, out_name, v_ch) in channels {
             let in_node = VirtualInputNode::new(in_id, in_name, in_id);
+            let mut noise_node = AiNoiseNode::new(noise_id, noise_name);
+            if let Some(cfg) = config {
+                noise_node.set_enabled(cfg.get_noise_cancellation(v_ch));
+            }
             let mut eq_node = EqNode::new(eq_id, eq_name, 48000);
             if let Some(cfg) = config {
                 let gains = cfg.get_eq(v_ch);
@@ -174,12 +191,14 @@ impl PipeWireBridgeService {
             let out_node = PhysicalOutputNode::new(out_id, out_name, target_device);
 
             controller.add_node(Box::new(in_node)).map_err(|e| anyhow::anyhow!(e))?;
+            controller.add_node(Box::new(noise_node)).map_err(|e| anyhow::anyhow!(e))?;
             controller.add_node(Box::new(eq_node)).map_err(|e| anyhow::anyhow!(e))?;
             controller.add_node(Box::new(resamp_node)).map_err(|e| anyhow::anyhow!(e))?;
             controller.add_node(Box::new(bypass_node)).map_err(|e| anyhow::anyhow!(e))?;
             controller.add_node(Box::new(out_node)).map_err(|e| anyhow::anyhow!(e))?;
 
-            controller.connect(in_id, eq_id).map_err(|e| anyhow::anyhow!(e))?;
+            controller.connect(in_id, noise_id).map_err(|e| anyhow::anyhow!(e))?;
+            controller.connect(noise_id, eq_id).map_err(|e| anyhow::anyhow!(e))?;
             controller.connect(eq_id, resamp_id).map_err(|e| anyhow::anyhow!(e))?;
             controller.connect(resamp_id, bypass_id).map_err(|e| anyhow::anyhow!(e))?;
             controller.connect(bypass_id, out_id).map_err(|e| anyhow::anyhow!(e))?;
@@ -213,6 +232,11 @@ impl PipeWireBridgeService {
         let t_desktop_peak = desktop_peak.clone();
         let t_desktop_rms = desktop_rms.clone();
         let t_is_active = is_active.clone();
+
+        let t_game_noise_enabled = game_noise_enabled.clone();
+        let t_chat_noise_enabled = chat_noise_enabled.clone();
+        let t_media_noise_enabled = media_noise_enabled.clone();
+        let t_aux_noise_enabled = aux_noise_enabled.clone();
 
         let t_game_eq_rx = game_eq_rx;
         let t_chat_eq_rx = chat_eq_rx;
@@ -492,7 +516,11 @@ impl PipeWireBridgeService {
 
                 // Helper to attach sink listener
                 macro_rules! register_sink_listener {
-                    ($stream:expr, $pusher:expr, $peak:expr, $rms:expr, $active:expr, $eq_rx:expr, $eq_id:expr, $eq_name:expr, $v_ch:expr, $name:expr) => {{
+                    ($stream:expr, $pusher:expr, $peak:expr, $rms:expr, $active:expr, $noise_enabled:expr, $eq_rx:expr, $noise_id:expr, $noise_name:expr, $eq_id:expr, $eq_name:expr, $v_ch:expr, $name:expr) => {{
+                        let mut ai_noise_node = AiNoiseNode::new($noise_id, $noise_name);
+                        let init_noise = thread_config.as_ref().map(|c| c.get_noise_cancellation($v_ch)).unwrap_or(false);
+                        ai_noise_node.set_enabled(init_noise);
+                        $noise_enabled.store(init_noise, Ordering::Relaxed);
                         let mut eq_node = EqNode::new($eq_id, $eq_name, 48000);
                         if let Some(ref cfg) = thread_config {
                             let gains = cfg.get_eq($v_ch);
@@ -505,16 +533,26 @@ impl PipeWireBridgeService {
                             peak_db: $peak,
                             rms_db: $rms,
                             is_active: $active,
+                            noise_enabled: $noise_enabled,
+                            ai_noise_node,
                             eq_node,
                             cmd_rx: $eq_rx,
                             scratch_buf: Box::new([0.0f32; SCRATCH_BUFFER_SAMPLES]),
+                            scratch_buf_2: Box::new([0.0f32; SCRATCH_BUFFER_SAMPLES]),
                         };
                         match $stream
                             .add_local_listener_with_user_data(user_data)
                             .process(|stream, data| {
                                 while let Ok(cmd) = data.cmd_rx.try_recv() {
-                                    if let GraphCommand::UpdateEq(_channel, band, gain) = cmd {
-                                        data.eq_node.set_band_gain(band, gain);
+                                    match cmd {
+                                        GraphCommand::UpdateEq(_channel, band, gain) => {
+                                            data.eq_node.set_band_gain(band, gain);
+                                        }
+                                        GraphCommand::ToggleAiNoise(_channel, enabled) => {
+                                            data.ai_noise_node.set_enabled(enabled);
+                                            data.noise_enabled.store(enabled, Ordering::Relaxed);
+                                        }
+                                        _ => {}
                                     }
                                 }
 
@@ -530,7 +568,8 @@ impl PipeWireBridgeService {
                                                 let (prefix, floats, _) = unsafe { raw_bytes.align_to::<f32>() };
                                                 if prefix.is_empty() && !floats.is_empty() {
                                                     let len = floats.len().min(SCRATCH_BUFFER_SAMPLES);
-                                                    data.eq_node.process(&floats[..len], &mut data.scratch_buf[..len]);
+                                                    data.ai_noise_node.process(&floats[..len], &mut data.scratch_buf_2[..len]);
+                                                    data.eq_node.process(&data.scratch_buf_2[..len], &mut data.scratch_buf[..len]);
                                                     let processed = &data.scratch_buf[..len];
 
                                                     let (peak, rms) = calculate_metrics(processed);
@@ -564,10 +603,10 @@ impl PipeWireBridgeService {
                     }};
                 }
 
-                let _game_listener = register_sink_listener!(game_stream, t_game_pusher, t_game_peak, t_game_rms, t_is_active.clone(), t_game_eq_rx, "game-eq", "Game Equalizer", VirtualChannel::Game, "game");
-                let _chat_listener = register_sink_listener!(chat_stream, t_chat_pusher, t_chat_peak, t_chat_rms, t_is_active.clone(), t_chat_eq_rx, "chat-eq", "Chat Equalizer", VirtualChannel::Chat, "chat");
-                let _media_listener = register_sink_listener!(media_stream, t_media_pusher, t_media_peak, t_media_rms, t_is_active.clone(), t_media_eq_rx, "media-eq", "Media Equalizer", VirtualChannel::Media, "media");
-                let _aux_listener = register_sink_listener!(aux_stream, t_aux_pusher, t_aux_peak, t_aux_rms, t_is_active.clone(), t_aux_eq_rx, "aux-eq", "Aux Equalizer", VirtualChannel::Aux, "aux");
+                let _game_listener = register_sink_listener!(game_stream, t_game_pusher, t_game_peak, t_game_rms, t_is_active.clone(), t_game_noise_enabled, t_game_eq_rx, "game-noise", "Game AI Noise", "game-eq", "Game Equalizer", VirtualChannel::Game, "game");
+                let _chat_listener = register_sink_listener!(chat_stream, t_chat_pusher, t_chat_peak, t_chat_rms, t_is_active.clone(), t_chat_noise_enabled, t_chat_eq_rx, "chat-noise", "Chat AI Noise", "chat-eq", "Chat Equalizer", VirtualChannel::Chat, "chat");
+                let _media_listener = register_sink_listener!(media_stream, t_media_pusher, t_media_peak, t_media_rms, t_is_active.clone(), t_media_noise_enabled, t_media_eq_rx, "media-noise", "Media AI Noise", "media-eq", "Media Equalizer", VirtualChannel::Media, "media");
+                let _aux_listener = register_sink_listener!(aux_stream, t_aux_pusher, t_aux_peak, t_aux_rms, t_is_active.clone(), t_aux_noise_enabled, t_aux_eq_rx, "aux-noise", "Aux AI Noise", "aux-eq", "Aux Equalizer", VirtualChannel::Aux, "aux");
 
                 let monitor_user_data = DesktopMonitorUserData {
                     desktop_peak: t_desktop_peak,
@@ -703,6 +742,10 @@ impl PipeWireBridgeService {
             aux_rms,
             desktop_peak,
             desktop_rms,
+            game_noise_enabled,
+            chat_noise_enabled,
+            media_noise_enabled,
+            aux_noise_enabled,
         })
     }
 
@@ -795,6 +838,46 @@ impl PipeWireBridgeService {
         Ok(())
     }
 
+    pub fn toggle_ai_noise(
+        &self,
+        channel: VirtualChannel,
+        enabled: bool,
+    ) -> Result<(), &'static str> {
+        let cmd = GraphCommand::ToggleAiNoise(channel, enabled);
+        match channel {
+            VirtualChannel::Game => {
+                self.game_noise_enabled.store(enabled, Ordering::Relaxed);
+                let _ = self.game_eq_tx.try_send(cmd);
+            }
+            VirtualChannel::Chat => {
+                self.chat_noise_enabled.store(enabled, Ordering::Relaxed);
+                let _ = self.chat_eq_tx.try_send(cmd);
+            }
+            VirtualChannel::Media => {
+                self.media_noise_enabled.store(enabled, Ordering::Relaxed);
+                let _ = self.media_eq_tx.try_send(cmd);
+            }
+            VirtualChannel::Aux => {
+                self.aux_noise_enabled.store(enabled, Ordering::Relaxed);
+                let _ = self.aux_eq_tx.try_send(cmd);
+            }
+            VirtualChannel::Master => {
+                self.game_noise_enabled.store(enabled, Ordering::Relaxed);
+                self.chat_noise_enabled.store(enabled, Ordering::Relaxed);
+                self.media_noise_enabled.store(enabled, Ordering::Relaxed);
+                self.aux_noise_enabled.store(enabled, Ordering::Relaxed);
+                let _ = self.game_eq_tx.try_send(GraphCommand::ToggleAiNoise(VirtualChannel::Game, enabled));
+                let _ = self.chat_eq_tx.try_send(GraphCommand::ToggleAiNoise(VirtualChannel::Chat, enabled));
+                let _ = self.media_eq_tx.try_send(GraphCommand::ToggleAiNoise(VirtualChannel::Media, enabled));
+                let _ = self.aux_eq_tx.try_send(GraphCommand::ToggleAiNoise(VirtualChannel::Aux, enabled));
+            }
+        }
+        if let Ok(mut controller) = self.graph_controller.lock() {
+            let _ = controller.toggle_ai_noise(channel, enabled);
+        }
+        Ok(())
+    }
+
     pub fn get_sink_metrics(&self) -> Vec<SinkMetric> {
         vec![
             SinkMetric {
@@ -832,30 +915,35 @@ impl PipeWireBridgeService {
                 channel_name: "Master".to_string(),
                 peak_volume_db: m_peak,
                 rms_volume_db: m_rms,
+                ai_noise_enabled: false,
             },
             ChannelVolumeMetric {
                 channel: AudioChannel::Game as i32,
                 channel_name: "Game".to_string(),
                 peak_volume_db: Self::read_decay_metric(&self.game_peak),
                 rms_volume_db: f32::from_bits(self.game_rms.load(Ordering::Relaxed)),
+                ai_noise_enabled: self.game_noise_enabled.load(Ordering::Relaxed),
             },
             ChannelVolumeMetric {
                 channel: AudioChannel::Chat as i32,
                 channel_name: "Chat".to_string(),
                 peak_volume_db: Self::read_decay_metric(&self.chat_peak),
                 rms_volume_db: f32::from_bits(self.chat_rms.load(Ordering::Relaxed)),
+                ai_noise_enabled: self.chat_noise_enabled.load(Ordering::Relaxed),
             },
             ChannelVolumeMetric {
                 channel: AudioChannel::Media as i32,
                 channel_name: "Media".to_string(),
                 peak_volume_db: Self::read_decay_metric(&self.media_peak),
                 rms_volume_db: f32::from_bits(self.media_rms.load(Ordering::Relaxed)),
+                ai_noise_enabled: self.media_noise_enabled.load(Ordering::Relaxed),
             },
             ChannelVolumeMetric {
                 channel: AudioChannel::Aux as i32,
                 channel_name: "Aux".to_string(),
                 peak_volume_db: Self::read_decay_metric(&self.aux_peak),
                 rms_volume_db: f32::from_bits(self.aux_rms.load(Ordering::Relaxed)),
+                ai_noise_enabled: self.aux_noise_enabled.load(Ordering::Relaxed),
             },
         ]
     }
@@ -895,19 +983,19 @@ impl PipeWireBridgeService {
             .iter()
             .map(|info| {
                 let (peak, rms) = match info.id.as_str() {
-                    "routune-game" | "game-eq" | "game-output" => (
+                    "routune-game" | "game-noise" | "game-eq" | "game-output" => (
                         f32::from_bits(self.game_peak.load(Ordering::Relaxed)),
                         f32::from_bits(self.game_rms.load(Ordering::Relaxed)),
                     ),
-                    "routune-chat" | "chat-eq" | "chat-output" => (
+                    "routune-chat" | "chat-noise" | "chat-eq" | "chat-output" => (
                         f32::from_bits(self.chat_peak.load(Ordering::Relaxed)),
                         f32::from_bits(self.chat_rms.load(Ordering::Relaxed)),
                     ),
-                    "routune-media" | "media-eq" | "media-output" => (
+                    "routune-media" | "media-noise" | "media-eq" | "media-output" => (
                         f32::from_bits(self.media_peak.load(Ordering::Relaxed)),
                         f32::from_bits(self.media_rms.load(Ordering::Relaxed)),
                     ),
-                    "routune-aux" | "aux-eq" | "aux-output" => (
+                    "routune-aux" | "aux-noise" | "aux-eq" | "aux-output" => (
                         f32::from_bits(self.aux_peak.load(Ordering::Relaxed)),
                         f32::from_bits(self.aux_rms.load(Ordering::Relaxed)),
                     ),
@@ -1067,11 +1155,14 @@ mod tests {
                 assert_eq!(channel_metrics[4].channel_name, "Aux");
 
                 let topology = service.get_topology();
-                assert_eq!(topology.nodes.len(), 20);
-                assert_eq!(topology.edges.len(), 16);
+                assert_eq!(topology.nodes.len(), 24);
+                assert_eq!(topology.edges.len(), 20);
 
                 let eq_res = service.update_eq(VirtualChannel::Game, 3, 5.0);
                 assert!(eq_res.is_ok());
+
+                let noise_res = service.toggle_ai_noise(VirtualChannel::Game, true);
+                assert!(noise_res.is_ok());
 
                 service.shutdown();
             }

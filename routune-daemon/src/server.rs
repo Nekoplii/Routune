@@ -55,6 +55,13 @@ pub trait TelemetryMetricsProvider: Send + Sync {
     ) -> Result<(), &'static str> {
         Ok(())
     }
+    fn toggle_ai_noise(
+        &self,
+        _channel: routune_core::graph::VirtualChannel,
+        _enabled: bool,
+    ) -> Result<(), &'static str> {
+        Ok(())
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -98,6 +105,14 @@ impl TelemetryMetricsProvider for crate::pipewire_bridge::PipeWireBridgeService 
         target_channel: proto::AudioChannel,
     ) -> Result<(), &'static str> {
         self.route_application(app_id, target_channel)
+    }
+
+    fn toggle_ai_noise(
+        &self,
+        channel: routune_core::graph::VirtualChannel,
+        enabled: bool,
+    ) -> Result<(), &'static str> {
+        self.toggle_ai_noise(channel, enabled)
     }
 }
 
@@ -292,6 +307,33 @@ impl proto::routune_control_server::RoutuneControl for ControlServiceImpl {
         }
         Ok(Response::new(proto::Empty {}))
     }
+
+    async fn toggle_ai_noise(
+        &self,
+        request: Request<proto::AiNoiseRequest>,
+    ) -> Result<Response<proto::Empty>, Status> {
+        let req = request.into_inner();
+        let virtual_channel = match proto::AudioChannel::try_from(req.channel) {
+            Ok(proto::AudioChannel::Master) => routune_core::graph::VirtualChannel::Master,
+            Ok(proto::AudioChannel::Game) => routune_core::graph::VirtualChannel::Game,
+            Ok(proto::AudioChannel::Chat) => routune_core::graph::VirtualChannel::Chat,
+            Ok(proto::AudioChannel::Media) => routune_core::graph::VirtualChannel::Media,
+            Ok(proto::AudioChannel::Aux) => routune_core::graph::VirtualChannel::Aux,
+            Err(_) => return Err(Status::invalid_argument("Invalid channel")),
+        };
+
+        if let Some(ref provider) = self.provider {
+            if let Err(err) = provider.toggle_ai_noise(virtual_channel, req.enabled) {
+                return Err(Status::internal(format!("Failed to toggle AI noise: {err}")));
+            }
+        }
+
+        if let Some(ref config_manager) = self.config_manager {
+            config_manager.set_noise_cancellation(virtual_channel, req.enabled).await;
+        }
+
+        Ok(Response::new(proto::Empty {}))
+    }
 }
 
 pub async fn run_telemetry_dispatcher(
@@ -370,30 +412,35 @@ pub async fn run_telemetry_dispatcher(
                     channel_name: "Master".to_string(),
                     peak_volume_db: latest_peak,
                     rms_volume_db: rms_db,
+                    ai_noise_enabled: false,
                 },
                 proto::ChannelVolumeMetric {
                     channel: proto::AudioChannel::Game as i32,
                     channel_name: "Game".to_string(),
                     peak_volume_db: -100.0,
                     rms_volume_db: -100.0,
+                    ai_noise_enabled: false,
                 },
                 proto::ChannelVolumeMetric {
                     channel: proto::AudioChannel::Chat as i32,
                     channel_name: "Chat".to_string(),
                     peak_volume_db: -100.0,
                     rms_volume_db: -100.0,
+                    ai_noise_enabled: false,
                 },
                 proto::ChannelVolumeMetric {
                     channel: proto::AudioChannel::Media as i32,
                     channel_name: "Media".to_string(),
                     peak_volume_db: -100.0,
                     rms_volume_db: -100.0,
+                    ai_noise_enabled: false,
                 },
                 proto::ChannelVolumeMetric {
                     channel: proto::AudioChannel::Aux as i32,
                     channel_name: "Aux".to_string(),
                     peak_volume_db: -100.0,
                     rms_volume_db: -100.0,
+                    ai_noise_enabled: false,
                 },
             ];
             (Vec::new(), None, fallback_channels)
@@ -503,6 +550,7 @@ mod tests {
                 channel_name: "Master".to_string(),
                 peak_volume_db: -3.5,
                 rms_volume_db: -9.2,
+                ai_noise_enabled: false,
             }],
         };
         tx.send(telemetry_frame).expect("send broadcast failed");
@@ -769,5 +817,75 @@ mod tests {
         });
         let invalid_res = service.route_application(invalid_req).await;
         assert!(invalid_res.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_toggle_ai_noise_rpc_and_persistence() {
+        use proto::routune_control_server::RoutuneControl;
+        use std::time::Duration;
+
+        let temp_dir = std::env::temp_dir().join("routune_noise_test");
+        let cfg_path = temp_dir.join("config.json");
+        let _ = std::fs::remove_file(&cfg_path);
+
+        let cfg_mgr = Arc::new(crate::config::ConfigManager::with_path(cfg_path.clone()).unwrap());
+
+        let is_active = Arc::new(AtomicBool::new(false));
+        let (tx, _) = broadcast::channel(16);
+        let (router, _) = crate::audio::ChannelRouter::new();
+        let router = Arc::new(tokio::sync::Mutex::new(router));
+
+        struct MockNoiseProvider {
+            last_noise: std::sync::Mutex<Option<(routune_core::graph::VirtualChannel, bool)>>,
+        }
+
+        impl TelemetryMetricsProvider for MockNoiseProvider {
+            fn get_sink_metrics(&self) -> Vec<proto::SinkMetric> { vec![] }
+            fn get_topology(&self) -> Option<proto::GraphTopology> { None }
+            fn get_master_metrics(&self) -> Option<(f32, f32)> { None }
+            fn get_channel_metrics(&self) -> Vec<proto::ChannelVolumeMetric> { vec![] }
+            fn is_active(&self) -> bool { true }
+            fn toggle_ai_noise(
+                &self,
+                channel: routune_core::graph::VirtualChannel,
+                enabled: bool,
+            ) -> Result<(), &'static str> {
+                *self.last_noise.lock().unwrap() = Some((channel, enabled));
+                Ok(())
+            }
+        }
+
+        let mock_provider = Arc::new(MockNoiseProvider {
+            last_noise: std::sync::Mutex::new(None),
+        });
+
+        let service = ControlServiceImpl::new_with_config(
+            is_active,
+            tx,
+            Some(mock_provider.clone()),
+            router,
+            Some(cfg_mgr.clone()),
+        );
+
+        let req = tonic::Request::new(proto::AiNoiseRequest {
+            channel: proto::AudioChannel::Chat as i32,
+            enabled: true,
+        });
+
+        let res = service.toggle_ai_noise(req).await;
+        assert!(res.is_ok());
+
+        let last = mock_provider.last_noise.lock().unwrap().take().unwrap();
+        assert_eq!(last.0, routune_core::graph::VirtualChannel::Chat);
+        assert!(last.1);
+
+        tokio::time::sleep(Duration::from_millis(250)).await;
+
+        let saved_cfg = routune_core::config::RoutuneConfig::load_or_default(&cfg_path);
+        assert!(saved_cfg.get_noise_cancellation(routune_core::graph::VirtualChannel::Chat));
+        assert!(!saved_cfg.get_noise_cancellation(routune_core::graph::VirtualChannel::Game));
+
+        let _ = std::fs::remove_file(&cfg_path);
+        let _ = std::fs::remove_dir(&temp_dir);
     }
 }

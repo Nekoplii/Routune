@@ -100,6 +100,14 @@ impl ConfigManager {
         let _ = self.save_tx.try_send(());
     }
 
+    pub async fn set_noise_cancellation(&self, channel: VirtualChannel, enabled: bool) {
+        {
+            let mut guard = self.config.lock().await;
+            guard.set_noise_cancellation(channel, enabled);
+        }
+        let _ = self.save_tx.try_send(());
+    }
+
     #[allow(dead_code)]
     pub fn path(&self) -> &Path {
         &self.path
