@@ -30,6 +30,10 @@ interface AudioStoreState {
   selectedEqChannel: AudioChannel;
   eqBands: Record<number, number[]>;
 
+  // AI Noise Suppression (RNNoise)
+  channelNoiseEnabled: Record<number, boolean>;
+  isTogglingAiNoise: Record<number, boolean>;
+
   // Actions
   setConnectionStatus: (status: ConnectionStatus, error?: string | null) => void;
   setAudioActive: (active: boolean) => void;
@@ -48,6 +52,7 @@ interface AudioStoreState {
   setSelectedEqChannel: (channel: AudioChannel) => void;
   setEqBandGain: (channel: AudioChannel, bandIndex: number, gainDb: number) => void;
   resetChannelEq: (channel: AudioChannel) => void;
+  toggleAiNoise: (channel: AudioChannel, enabled: boolean) => Promise<boolean>;
 }
 
 const DEFAULT_EQ_BANDS = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
@@ -83,6 +88,14 @@ export const useAudioStore = create<AudioStoreState>((set) => ({
     [AudioChannel.AUX]: [...DEFAULT_EQ_BANDS],
   },
 
+  channelNoiseEnabled: {
+    [AudioChannel.GAME]: false,
+    [AudioChannel.CHAT]: false,
+    [AudioChannel.MEDIA]: false,
+    [AudioChannel.AUX]: false,
+  },
+  isTogglingAiNoise: {},
+
   setConnectionStatus: (status, error = null) =>
     set({
       connectionStatus: status,
@@ -97,11 +110,30 @@ export const useAudioStore = create<AudioStoreState>((set) => ({
   setLatencyMs: (latencyMs) => set({ latencyMs }),
 
   updateTelemetry: (peakDb, rmsDb, sequenceNumber, channelMetrics = []) =>
-    set({
-      peakDb,
-      rmsDb,
-      sequenceNumber,
-      channelMetrics,
+    set((s) => {
+      let updatedNoise = s.channelNoiseEnabled;
+      if (channelMetrics.length > 0) {
+        let changed = false;
+        const nextNoise = { ...s.channelNoiseEnabled };
+        for (const metric of channelMetrics) {
+          if (!s.isTogglingAiNoise[metric.channel] && metric.channel in nextNoise) {
+            if (nextNoise[metric.channel] !== metric.aiNoiseEnabled) {
+              nextNoise[metric.channel] = metric.aiNoiseEnabled;
+              changed = true;
+            }
+          }
+        }
+        if (changed) {
+          updatedNoise = nextNoise;
+        }
+      }
+      return {
+        peakDb,
+        rmsDb,
+        sequenceNumber,
+        channelMetrics,
+        channelNoiseEnabled: updatedNoise,
+      };
     }),
 
   resetTelemetry: () =>
@@ -246,6 +278,32 @@ export const useAudioStore = create<AudioStoreState>((set) => ({
         [channel]: [...DEFAULT_EQ_BANDS],
       },
     })),
+
+  toggleAiNoise: async (channel: AudioChannel, enabled: boolean) => {
+    const prevEnabled = useAudioStore.getState().channelNoiseEnabled[channel] ?? false;
+    // Optimistic update
+    set((s) => ({
+      isTogglingAiNoise: { ...s.isTogglingAiNoise, [channel]: true },
+      channelNoiseEnabled: { ...s.channelNoiseEnabled, [channel]: enabled },
+    }));
+
+    try {
+      const call = routuneClient.toggleAiNoise({ channel, enabled });
+      await call.response;
+      set((s) => ({
+        isTogglingAiNoise: { ...s.isTogglingAiNoise, [channel]: false },
+      }));
+      return true;
+    } catch (err: unknown) {
+      console.warn(`Failed to toggle AI noise for channel ${channel}:`, err);
+      // Revert optimistic update on failure
+      set((s) => ({
+        channelNoiseEnabled: { ...s.channelNoiseEnabled, [channel]: prevEnabled },
+        isTogglingAiNoise: { ...s.isTogglingAiNoise, [channel]: false },
+      }));
+      return false;
+    }
+  },
 }));
 
 // Discrete selectors to avoid unnecessary component tree re-renders
@@ -261,3 +319,4 @@ export const selectTelemetry = (state: AudioStoreState) => ({
 });
 export const selectActiveApps = (state: AudioStoreState) => state.activeApps;
 export const selectIsRoutingApp = (state: AudioStoreState) => state.isRoutingApp;
+export const selectChannelNoiseEnabled = (state: AudioStoreState) => state.channelNoiseEnabled;

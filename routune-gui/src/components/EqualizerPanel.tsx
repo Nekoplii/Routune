@@ -6,6 +6,7 @@ import {
   MessageSquare,
   Music,
   Radio,
+  Sparkles,
 } from "lucide-react";
 import { useAudioStore } from "../store/useAudioStore";
 import { AudioChannel } from "../proto/routune";
@@ -76,10 +77,13 @@ export function EqualizerPanel() {
   const setEqBandGain = useAudioStore((s) => s.setEqBandGain);
   const resetChannelEq = useAudioStore((s) => s.resetChannelEq);
   const isConnected = useAudioStore((s) => s.connectionStatus === "connected");
+  const channelNoiseEnabled = useAudioStore((s) => s.channelNoiseEnabled);
+  const toggleAiNoise = useAudioStore((s) => s.toggleAiNoise);
 
   const activeChannelConfig =
     CHANNEL_TABS.find((t) => t.id === selectedChannel) || CHANNEL_TABS[0];
   const channelGains = eqBands[selectedChannel] || [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+  const isAiNoiseActive = channelNoiseEnabled[selectedChannel] ?? false;
 
   // Debounce timers keyed by `${channel}-${bandIndex}`
   const debounceTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
@@ -158,8 +162,44 @@ export function EqualizerPanel() {
           </div>
         </div>
 
-        {/* Right Action: Reset Flat */}
-        <div className="flex items-center gap-2 self-start sm:self-auto">
+        {/* Right Actions: AI Noise Suppression Toggle & Reset Flat */}
+        <div className="flex items-center gap-2.5 self-start sm:self-auto">
+          {/* AI Noise Suppression (RNNoise) Switch */}
+          <button
+            onClick={() => toggleAiNoise(selectedChannel, !isAiNoiseActive)}
+            disabled={!isConnected}
+            title={
+              isAiNoiseActive
+                ? `Disable AI Noise Suppression for ${activeChannelConfig.name}`
+                : `Enable AI Noise Suppression (RNNoise) for ${activeChannelConfig.name}`
+            }
+            className={`flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed select-none ${
+              isAiNoiseActive
+                ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.18)]"
+                : "border-neutral-800 bg-neutral-900/80 text-neutral-400 hover:border-neutral-700 hover:text-neutral-200"
+            }`}
+          >
+            <Sparkles
+              className={`h-3.5 w-3.5 transition-transform duration-200 ${
+                isAiNoiseActive ? "text-emerald-400 scale-110" : "text-neutral-500"
+              }`}
+            />
+            <span className="hidden sm:inline font-medium">AI Noise Suppression (RNNoise)</span>
+            <span className="inline sm:hidden font-medium">AI Noise</span>
+            <div
+              className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors duration-200 ease-in-out ${
+                isAiNoiseActive ? "bg-emerald-500" : "bg-neutral-700"
+              }`}
+            >
+              <span
+                className={`inline-block h-2.5 w-2.5 transform rounded-full bg-white shadow transition-transform duration-200 ease-in-out ${
+                  isAiNoiseActive ? "translate-x-3.5" : "translate-x-0.5"
+                }`}
+              />
+            </div>
+          </button>
+
+          {/* Reset Flat */}
           <button
             onClick={handleResetFlat}
             disabled={!isConnected}
