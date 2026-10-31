@@ -22,6 +22,10 @@ interface AudioStoreState {
   channelRoutings: Record<number, string>;
   isRoutingUpdating: Record<number, boolean>;
 
+  // 10-Band Parametric Equalizer State
+  selectedEqChannel: AudioChannel;
+  eqBands: Record<number, number[]>;
+
   // Actions
   setConnectionStatus: (status: ConnectionStatus, error?: string | null) => void;
   setAudioActive: (active: boolean) => void;
@@ -35,7 +39,12 @@ interface AudioStoreState {
   resetTelemetry: () => void;
   fetchHardwareOutputs: () => Promise<void>;
   setChannelRouting: (channel: AudioChannel, deviceName: string) => Promise<boolean>;
+  setSelectedEqChannel: (channel: AudioChannel) => void;
+  setEqBandGain: (channel: AudioChannel, bandIndex: number, gainDb: number) => void;
+  resetChannelEq: (channel: AudioChannel) => void;
 }
+
+const DEFAULT_EQ_BANDS = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 
 export const useAudioStore = create<AudioStoreState>((set) => ({
   connectionStatus: "disconnected",
@@ -56,6 +65,14 @@ export const useAudioStore = create<AudioStoreState>((set) => ({
     [AudioChannel.AUX]: "none",
   },
   isRoutingUpdating: {},
+
+  selectedEqChannel: AudioChannel.GAME,
+  eqBands: {
+    [AudioChannel.GAME]: [...DEFAULT_EQ_BANDS],
+    [AudioChannel.CHAT]: [...DEFAULT_EQ_BANDS],
+    [AudioChannel.MEDIA]: [...DEFAULT_EQ_BANDS],
+    [AudioChannel.AUX]: [...DEFAULT_EQ_BANDS],
+  },
 
   setConnectionStatus: (status, error = null) =>
     set({
@@ -128,6 +145,28 @@ export const useAudioStore = create<AudioStoreState>((set) => ({
       return false;
     }
   },
+
+  setSelectedEqChannel: (channel) => set({ selectedEqChannel: channel }),
+
+  setEqBandGain: (channel, bandIndex, gainDb) =>
+    set((s) => {
+      const currentBands = s.eqBands[channel] ? [...s.eqBands[channel]] : [...DEFAULT_EQ_BANDS];
+      currentBands[bandIndex] = gainDb;
+      return {
+        eqBands: {
+          ...s.eqBands,
+          [channel]: currentBands,
+        },
+      };
+    }),
+
+  resetChannelEq: (channel) =>
+    set((s) => ({
+      eqBands: {
+        ...s.eqBands,
+        [channel]: [...DEFAULT_EQ_BANDS],
+      },
+    })),
 }));
 
 // Discrete selectors to avoid unnecessary component tree re-renders
