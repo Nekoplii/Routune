@@ -156,6 +156,10 @@ export interface ChannelVolumeMetric {
      * @generated from protobuf field: float rms_volume_db = 4
      */
     rmsVolumeDb: number;
+    /**
+     * @generated from protobuf field: bool ai_noise_enabled = 5
+     */
+    aiNoiseEnabled: boolean;
 }
 /**
  * @generated from protobuf message routune.SinkMetric
@@ -312,6 +316,19 @@ export interface AppRouteRequest {
      * @generated from protobuf field: routune.AudioChannel target_channel = 2
      */
     targetChannel: AudioChannel;
+}
+/**
+ * @generated from protobuf message routune.AiNoiseRequest
+ */
+export interface AiNoiseRequest {
+    /**
+     * @generated from protobuf field: routune.AudioChannel channel = 1
+     */
+    channel: AudioChannel;
+    /**
+     * @generated from protobuf field: bool enabled = 2
+     */
+    enabled: boolean;
 }
 /**
  * @generated from protobuf enum routune.AudioChannel
@@ -855,7 +872,8 @@ class ChannelVolumeMetric$Type extends MessageType<ChannelVolumeMetric> {
             { no: 1, name: "channel", kind: "enum", T: () => ["routune.AudioChannel", AudioChannel] },
             { no: 2, name: "channel_name", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
             { no: 3, name: "peak_volume_db", kind: "scalar", T: 2 /*ScalarType.FLOAT*/ },
-            { no: 4, name: "rms_volume_db", kind: "scalar", T: 2 /*ScalarType.FLOAT*/ }
+            { no: 4, name: "rms_volume_db", kind: "scalar", T: 2 /*ScalarType.FLOAT*/ },
+            { no: 5, name: "ai_noise_enabled", kind: "scalar", T: 8 /*ScalarType.BOOL*/ }
         ]);
     }
     create(value?: PartialMessage<ChannelVolumeMetric>): ChannelVolumeMetric {
@@ -864,6 +882,7 @@ class ChannelVolumeMetric$Type extends MessageType<ChannelVolumeMetric> {
         message.channelName = "";
         message.peakVolumeDb = 0;
         message.rmsVolumeDb = 0;
+        message.aiNoiseEnabled = false;
         if (value !== undefined)
             reflectionMergePartial<ChannelVolumeMetric>(this, message, value);
         return message;
@@ -884,6 +903,9 @@ class ChannelVolumeMetric$Type extends MessageType<ChannelVolumeMetric> {
                     break;
                 case /* float rms_volume_db */ 4:
                     message.rmsVolumeDb = reader.float();
+                    break;
+                case /* bool ai_noise_enabled */ 5:
+                    message.aiNoiseEnabled = reader.bool();
                     break;
                 default:
                     let u = options.readUnknownField;
@@ -909,6 +931,9 @@ class ChannelVolumeMetric$Type extends MessageType<ChannelVolumeMetric> {
         /* float rms_volume_db = 4; */
         if (message.rmsVolumeDb !== 0)
             writer.tag(4, WireType.Bit32).float(message.rmsVolumeDb);
+        /* bool ai_noise_enabled = 5; */
+        if (message.aiNoiseEnabled !== false)
+            writer.tag(5, WireType.Varint).bool(message.aiNoiseEnabled);
         let u = options.writeUnknownFields;
         if (u !== false)
             (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
@@ -1470,6 +1495,61 @@ class AppRouteRequest$Type extends MessageType<AppRouteRequest> {
  * @generated MessageType for protobuf message routune.AppRouteRequest
  */
 export const AppRouteRequest = new AppRouteRequest$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class AiNoiseRequest$Type extends MessageType<AiNoiseRequest> {
+    constructor() {
+        super("routune.AiNoiseRequest", [
+            { no: 1, name: "channel", kind: "enum", T: () => ["routune.AudioChannel", AudioChannel] },
+            { no: 2, name: "enabled", kind: "scalar", T: 8 /*ScalarType.BOOL*/ }
+        ]);
+    }
+    create(value?: PartialMessage<AiNoiseRequest>): AiNoiseRequest {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.channel = 0;
+        message.enabled = false;
+        if (value !== undefined)
+            reflectionMergePartial<AiNoiseRequest>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: AiNoiseRequest): AiNoiseRequest {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* routune.AudioChannel channel */ 1:
+                    message.channel = reader.int32();
+                    break;
+                case /* bool enabled */ 2:
+                    message.enabled = reader.bool();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: AiNoiseRequest, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* routune.AudioChannel channel = 1; */
+        if (message.channel !== 0)
+            writer.tag(1, WireType.Varint).int32(message.channel);
+        /* bool enabled = 2; */
+        if (message.enabled !== false)
+            writer.tag(2, WireType.Varint).bool(message.enabled);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message routune.AiNoiseRequest
+ */
+export const AiNoiseRequest = new AiNoiseRequest$Type();
 /**
  * @generated ServiceType for protobuf service routune.RoutuneControl
  */
@@ -1480,5 +1560,6 @@ export const RoutuneControl = new ServiceType("routune.RoutuneControl", [
     { name: "SetChannelRouting", options: {}, I: RouteRequest, O: RouteResponse },
     { name: "SetEqBand", options: {}, I: EqRequest, O: Empty },
     { name: "GetActiveApplications", options: {}, I: Empty, O: AppList },
-    { name: "RouteApplication", options: {}, I: AppRouteRequest, O: Empty }
+    { name: "RouteApplication", options: {}, I: AppRouteRequest, O: Empty },
+    { name: "ToggleAiNoise", options: {}, I: AiNoiseRequest, O: Empty }
 ]);

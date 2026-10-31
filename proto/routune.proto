@@ -10,6 +10,7 @@ service RoutuneControl {
   rpc SetEqBand (EqRequest) returns (Empty);
   rpc GetActiveApplications (Empty) returns (AppList);
   rpc RouteApplication (AppRouteRequest) returns (Empty);
+  rpc ToggleAiNoise (AiNoiseRequest) returns (Empty);
 }
 
 message Empty {}
@@ -71,6 +72,7 @@ message ChannelVolumeMetric {
   string channel_name = 2;
   float peak_volume_db = 3;
   float rms_volume_db = 4;
+  bool ai_noise_enabled = 5;
 }
 
 message SinkMetric {
@@ -124,4 +126,9 @@ message AppList {
 message AppRouteRequest {
   uint32 app_id = 1;
   AudioChannel target_channel = 2;
+}
+
+message AiNoiseRequest {
+  AudioChannel channel = 1;
+  bool enabled = 2;
 }

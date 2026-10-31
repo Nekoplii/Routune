@@ -4,6 +4,7 @@
 import type { RpcTransport } from "@protobuf-ts/runtime-rpc";
 import type { ServiceInfo } from "@protobuf-ts/runtime-rpc";
 import { RoutuneControl } from "./routune";
+import type { AiNoiseRequest } from "./routune";
 import type { AppRouteRequest } from "./routune";
 import type { AppList } from "./routune";
 import type { EqRequest } from "./routune";
@@ -51,6 +52,10 @@ export interface IRoutuneControlClient {
      * @generated from protobuf rpc: RouteApplication
      */
     routeApplication(input: AppRouteRequest, options?: RpcOptions): UnaryCall<AppRouteRequest, Empty>;
+    /**
+     * @generated from protobuf rpc: ToggleAiNoise
+     */
+    toggleAiNoise(input: AiNoiseRequest, options?: RpcOptions): UnaryCall<AiNoiseRequest, Empty>;
 }
 /**
  * @generated from protobuf service routune.RoutuneControl
@@ -109,5 +114,12 @@ export class RoutuneControlClient implements IRoutuneControlClient, ServiceInfo 
     routeApplication(input: AppRouteRequest, options?: RpcOptions): UnaryCall<AppRouteRequest, Empty> {
         const method = this.methods[6], opt = this._transport.mergeOptions(options);
         return stackIntercept<AppRouteRequest, Empty>("unary", this._transport, method, opt, input);
+    }
+    /**
+     * @generated from protobuf rpc: ToggleAiNoise
+     */
+    toggleAiNoise(input: AiNoiseRequest, options?: RpcOptions): UnaryCall<AiNoiseRequest, Empty> {
+        const method = this.methods[7], opt = this._transport.mergeOptions(options);
+        return stackIntercept<AiNoiseRequest, Empty>("unary", this._transport, method, opt, input);
     }
 }
