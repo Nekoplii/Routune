@@ -1,61 +1,37 @@
+import { Sidebar } from "./components/Sidebar";
 import { Header } from "./components/Header";
-import { VolumeMeter } from "./components/VolumeMeter";
-import { AppRoutingPanel } from "./components/AppRoutingPanel";
-import { ChannelRoutingPanels } from "./components/ChannelRoutingPanels";
-import { EqualizerPanel } from "./components/EqualizerPanel";
-import { DaemonStatusCard } from "./components/DaemonStatusCard";
+import { MixerPanel } from "./components/MixerPanel";
+import { RoutingView } from "./components/RoutingView";
+import { DspTuningView } from "./components/DspTuningView";
+import { AboutView } from "./components/AboutView";
+import { useAudioStore } from "./store/useAudioStore";
 import { useTelemetryStream } from "./hooks/useTelemetryStream";
-import { Sliders } from "lucide-react";
 
 export function App() {
-  // Start gRPC-Web telemetry and heartbeat loop
+  // Start 60FPS gRPC-Web telemetry and heartbeat loop with RAF throttling
   useTelemetryStream();
 
+  const activeView = useAudioStore((s) => s.activeView);
+
   return (
-    <div className="flex h-screen w-screen flex-col bg-neutral-950 text-neutral-100 select-none overflow-hidden font-sans">
+    <div className="flex h-screen w-screen flex-col bg-[#131316] text-zinc-100 select-none overflow-hidden font-sans">
+      {/* Native Multi-Platform Window Titlebar */}
       <Header />
 
-      <main className="flex-1 overflow-y-auto p-6 space-y-6 max-w-6xl w-full mx-auto">
-        {/* Real-time Master Audio Meter */}
-        <section>
-          <VolumeMeter />
-        </section>
+      <div className="flex flex-1 overflow-hidden">
+        {/* Studio Navigation Sidebar */}
+        <Sidebar />
 
-        {/* Sonar Application-Level Routing (Drag & Drop Active App Streams) */}
-        <section>
-          <AppRoutingPanel />
-        </section>
-
-        {/* Sonar Channel Routing & Real-time Telemetry (4 Channels) */}
-        <section>
-          <ChannelRoutingPanels />
-        </section>
-
-        {/* DSP Tuning Pipeline (10-Band Parametric EQ) */}
-        <section>
-          <EqualizerPanel />
-        </section>
-
-        {/* System & Architecture Grid */}
-        <section className="grid grid-cols-1 md:grid-cols-2 gap-5">
-          <DaemonStatusCard />
-
-          {/* Routing Matrix Card */}
-          <div className="flex flex-col rounded-xl border border-neutral-800 bg-neutral-900/40 p-5">
-            <div className="flex items-center gap-2 text-indigo-400">
-              <Sliders className="h-5 w-5" />
-              <h2 className="text-sm font-medium text-neutral-200">Routing Topology</h2>
-            </div>
-            <p className="mt-2 text-xs text-neutral-400 leading-relaxed">
-              Shared definitions in <code className="text-neutral-300">routune-core</code> define source/sink node channels. The GUI mutates graphs via IPC commands.
-            </p>
-            <div className="mt-auto pt-4 flex items-center justify-between text-xs font-mono text-neutral-500">
-              <span>Graph Engine:</span>
-              <span className="text-indigo-400">Lock-Free Bounded</span>
-            </div>
-          </div>
-        </section>
-      </main>
+        {/* Main Studio Viewport */}
+        <div className="flex flex-1 flex-col overflow-hidden bg-[#18181d]">
+          <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 w-full max-w-7xl mx-auto">
+            {activeView === "mixer" && <MixerPanel />}
+            {activeView === "routing" && <RoutingView />}
+            {activeView === "tuning" && <DspTuningView />}
+            {activeView === "about" && <AboutView />}
+          </main>
+        </div>
+      </div>
     </div>
   );
 }

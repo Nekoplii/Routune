@@ -72,15 +72,15 @@ export function ChannelRoutingPanels() {
   }, [channelMetrics]);
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Speaker className="h-4 w-4 text-cyan-400" />
-          <h2 className="text-xs font-semibold tracking-wider uppercase text-neutral-400">
-            Sonar Channel Hardware Routing (4 Virtual Sinks)
+          <Speaker className="h-4 w-4 text-sky-400" />
+          <h2 className="text-xs font-bold tracking-wider uppercase text-zinc-300 font-mono">
+            Hardware Output Sinks (4 Virtual Sinks)
           </h2>
         </div>
-        <span className="font-mono text-[11px] text-neutral-500">
+        <span className="font-mono text-[11px] text-zinc-400">
           Independent CPAL Hardware Locks
         </span>
       </div>
@@ -101,26 +101,31 @@ export function ChannelRoutingPanels() {
           return (
             <div
               key={ch.id}
-              className={`flex flex-col rounded-xl border bg-neutral-900/60 p-4 shadow-sm backdrop-blur transition-all ${ch.accentBorder}`}
+              className={`flex flex-col rounded-2xl border bg-zinc-900/60 p-4 shadow-xl backdrop-blur-md transition-all ${ch.accentBorder} hover:border-white/10`}
             >
               {/* Channel Header */}
-              <div className="flex items-center justify-between pb-2 border-b border-neutral-800">
+              <div className="flex items-center justify-between pb-3 border-b border-white/5">
                 <div className="flex items-center gap-2">
-                  <Icon className={`h-4 w-4 ${ch.color}`} />
-                  <span className="text-sm font-semibold text-neutral-200">
-                    {ch.name}
-                  </span>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-zinc-950 border border-white/5">
+                    <Icon className={`h-4 w-4 ${ch.color}`} />
+                  </div>
+                  <div>
+                    <span className="text-sm font-bold text-white block leading-none">
+                      {ch.name}
+                    </span>
+                    <span className="text-[10px] font-mono text-zinc-400">Virtual Sink</span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-1.5 font-mono text-[11px]">
-                  <span className={isClipping ? "text-red-400 font-bold" : "text-neutral-400"}>
-                    {isConnected ? `${peakDb.toFixed(1)} dB` : "-∞"}
+                <div className="flex items-center gap-1.5 font-mono text-xs">
+                  <span className={isClipping ? "text-rose-400 font-bold" : "text-zinc-400"}>
+                    {isConnected ? `${peakDb.toFixed(1)} dB` : "-∞ dB"}
                   </span>
                 </div>
               </div>
 
               {/* Mini Peak/RMS Audio Bar */}
-              <div className="mt-3 flex flex-col gap-1">
-                <div className="relative h-3 w-full overflow-hidden rounded bg-neutral-950 border border-neutral-800/80 p-0.5">
+              <div className="mt-3 flex flex-col gap-1.5">
+                <div className="relative h-2.5 w-full overflow-hidden rounded bg-zinc-950 border border-white/5 p-0.5">
                   <div
                     className="h-full rounded-sm transition-all duration-75 ease-out"
                     style={{
@@ -136,7 +141,7 @@ export function ChannelRoutingPanels() {
                     }}
                   />
                 </div>
-                <div className="relative h-1 w-full overflow-hidden rounded bg-neutral-950/60 border border-neutral-800/40">
+                <div className="relative h-1 w-full overflow-hidden rounded bg-zinc-950/80 border border-white/5">
                   <div
                     className="h-full bg-cyan-400/80 transition-all duration-100 ease-out"
                     style={{ width: `${rmsPct}%` }}
@@ -146,18 +151,18 @@ export function ChannelRoutingPanels() {
 
               {/* Hardware Device Routing Section */}
               <div className="mt-4 flex flex-col gap-1.5">
-                <div className="flex items-center justify-between text-[11px] font-medium text-neutral-400">
-                  <span>Target Hardware Device:</span>
+                <div className="flex items-center justify-between text-[11px] font-mono font-medium text-zinc-400">
+                  <span>TARGET HARDWARE</span>
                   {isUpdating ? (
-                    <span className="flex items-center gap-1 text-[10px] text-indigo-400 font-mono">
+                    <span className="flex items-center gap-1 text-[10px] text-sky-400 font-mono">
                       <Loader2 className="h-2.5 w-2.5 animate-spin" /> Routing...
                     </span>
                   ) : currentDevice !== "none" && currentDevice !== "Unassigned" ? (
-                    <span className="flex items-center gap-1 text-[10px] text-emerald-400 font-mono">
-                      <CheckCircle2 className="h-2.5 w-2.5" /> Routed
+                    <span className="flex items-center gap-1 text-[10px] text-teal-400 font-mono">
+                      <CheckCircle2 className="h-2.5 w-2.5" /> Bound
                     </span>
                   ) : (
-                    <span className="text-[10px] text-neutral-500 font-mono">
+                    <span className="text-[10px] text-zinc-500 font-mono">
                       Muted
                     </span>
                   )}
@@ -173,7 +178,7 @@ export function ChannelRoutingPanels() {
                   onChange={(e) => {
                     setChannelRouting(ch.id, e.target.value);
                   }}
-                  className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-2.5 py-1.5 text-xs text-neutral-200 font-mono shadow-inner transition hover:border-neutral-700 focus:border-indigo-500 focus:outline-none disabled:opacity-50 cursor-pointer"
+                  className="w-full rounded-xl border border-white/10 bg-zinc-950 px-3 py-2 text-xs text-zinc-200 font-mono shadow-inner transition hover:border-white/20 focus:border-sky-500 focus:outline-none disabled:opacity-50 cursor-pointer"
                 >
                   <option value="none">-- Unassigned (Mute) --</option>
                   {hardwareOutputs.map((device) => (
@@ -183,8 +188,8 @@ export function ChannelRoutingPanels() {
                   ))}
                 </select>
 
-                <div className="mt-1 flex items-center justify-between text-[10px] font-mono text-neutral-500">
-                  <span>Sink: routune-{ch.name.toLowerCase()}</span>
+                <div className="mt-1 flex items-center justify-between text-[10px] font-mono text-zinc-400">
+                  <span>routune-{ch.name.toLowerCase()}</span>
                   <span className="truncate max-w-[140px]" title={currentDevice}>
                     {currentDevice === "none" || currentDevice === "Unassigned"
                       ? "Unbound"

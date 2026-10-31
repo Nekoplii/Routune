@@ -13,10 +13,13 @@
     "windows": [
       {
         "title": "Routune",
-        "width": 1024,
+        "width": 1100,
         "height": 720,
+        "minWidth": 860,
+        "minHeight": 580,
         "resizable": true,
-        "fullscreen": false
+        "fullscreen": false,
+        "decorations": false
       }
     ],
     "security": {

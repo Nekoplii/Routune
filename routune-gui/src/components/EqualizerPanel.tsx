@@ -140,24 +140,24 @@ export function EqualizerPanel() {
   }, [resetChannelEq, selectedChannel]);
 
   return (
-    <div className="flex flex-col rounded-xl border border-neutral-800 bg-neutral-900/40 p-5 shadow-sm">
+    <div className="flex flex-col rounded-2xl border border-white/5 bg-zinc-900/60 p-5 shadow-xl backdrop-blur-md">
       {/* Header & Channel Selector */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-neutral-800/80 pb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/5 pb-4">
         <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-900 text-emerald-400">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/5 bg-zinc-950 text-purple-400 shadow-inner">
             <Activity className="h-5 w-5" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-sm font-semibold tracking-wide text-neutral-100">
-                DSP Tuning Pipeline
+              <h2 className="text-sm font-bold tracking-tight text-white">
+                Acoustic Equalizer & Noise Cancellation
               </h2>
-              <span className="rounded bg-neutral-800 px-1.5 py-0.5 font-mono text-[10px] text-neutral-400">
-                10-Band Graphic EQ
+              <span className="rounded bg-white/5 border border-white/10 px-1.5 py-0.5 font-mono text-[10px] text-zinc-300">
+                10-Band Biquad
               </span>
             </div>
-            <p className="text-xs text-neutral-400 mt-0.5">
-              Cascading DirectForm1 Biquad Filters (Q ≈ 1.414, lock-free, zero-alloc)
+            <p className="text-xs text-zinc-400 mt-0.5">
+              DirectForm1 cascaded peaking filters (Q ≈ 1.414, 48kHz lock-free)
             </p>
           </div>
         </div>
@@ -173,22 +173,22 @@ export function EqualizerPanel() {
                 ? `Disable AI Noise Suppression for ${activeChannelConfig.name}`
                 : `Enable AI Noise Suppression (RNNoise) for ${activeChannelConfig.name}`
             }
-            className={`flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed select-none ${
+            className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-medium transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed select-none ${
               isAiNoiseActive
-                ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.18)]"
-                : "border-neutral-800 bg-neutral-900/80 text-neutral-400 hover:border-neutral-700 hover:text-neutral-200"
+                ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-300 shadow-[0_0_15px_rgba(16,185,129,0.2)]"
+                : "border-white/10 bg-zinc-800/60 text-zinc-400 hover:border-white/20 hover:text-zinc-200"
             }`}
           >
             <Sparkles
               className={`h-3.5 w-3.5 transition-transform duration-200 ${
-                isAiNoiseActive ? "text-emerald-400 scale-110" : "text-neutral-500"
+                isAiNoiseActive ? "text-emerald-400 scale-110" : "text-zinc-500"
               }`}
             />
             <span className="hidden sm:inline font-medium">AI Noise Suppression (RNNoise)</span>
             <span className="inline sm:hidden font-medium">AI Noise</span>
             <div
               className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors duration-200 ease-in-out ${
-                isAiNoiseActive ? "bg-emerald-500" : "bg-neutral-700"
+                isAiNoiseActive ? "bg-emerald-500" : "bg-zinc-700"
               }`}
             >
               <span
@@ -204,7 +204,7 @@ export function EqualizerPanel() {
             onClick={handleResetFlat}
             disabled={!isConnected}
             title="Reset all bands to 0 dB"
-            className="flex items-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-900/80 px-3 py-1.5 text-xs font-medium text-neutral-300 transition-colors hover:border-neutral-700 hover:bg-neutral-800 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+            className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-zinc-800/80 px-3 py-2 text-xs font-mono font-medium text-zinc-300 transition-colors hover:border-white/20 hover:bg-zinc-700/80 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
           >
             <RotateCcw className="h-3.5 w-3.5" />
             <span>Reset Flat</span>
@@ -214,10 +214,10 @@ export function EqualizerPanel() {
 
       {/* Channel Selection Tabs */}
       <div className="flex items-center gap-2 pt-4 pb-2 overflow-x-auto">
-        <span className="text-xs font-medium text-neutral-400 mr-1 shrink-0">
-          Target Channel:
+        <span className="text-xs font-medium text-zinc-400 mr-1 shrink-0 font-mono">
+          CHANNEL:
         </span>
-        <div className="flex items-center gap-1.5 rounded-lg border border-neutral-800/80 bg-neutral-950/60 p-1 shrink-0">
+        <div className="flex items-center gap-1.5 rounded-xl border border-white/5 bg-zinc-950/80 p-1 shrink-0">
           {CHANNEL_TABS.map((tab) => {
             const Icon = tab.icon;
             const isSelected = tab.id === selectedChannel;
@@ -225,10 +225,10 @@ export function EqualizerPanel() {
               <button
                 key={tab.id}
                 onClick={() => setSelectedChannel(tab.id)}
-                className={`flex items-center gap-2 rounded-md px-3 py-1.5 text-xs font-medium transition-all cursor-pointer ${
+                className={`flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-medium transition-all cursor-pointer ${
                   isSelected
                     ? `${tab.activeBg} ${tab.activeColor} ${tab.activeBorder} border shadow-sm`
-                    : "text-neutral-400 border border-transparent hover:text-neutral-200 hover:bg-neutral-900/80"
+                    : "text-zinc-400 border border-transparent hover:text-zinc-200 hover:bg-zinc-900/80"
                 }`}
               >
                 <Icon className="h-3.5 w-3.5" />
@@ -240,10 +240,10 @@ export function EqualizerPanel() {
       </div>
 
       {/* EQ Sliders Grid */}
-      <div className="relative mt-4 rounded-lg border border-neutral-800/60 bg-neutral-950/40 p-4">
+      <div className="relative mt-4 rounded-xl border border-white/5 bg-zinc-950/60 p-4">
         {/* Background zero dB reference line */}
         <div
-          className="pointer-events-none absolute left-10 right-10 border-b border-dashed border-neutral-800/70"
+          className="pointer-events-none absolute left-10 right-10 border-b border-dashed border-white/10"
           style={{ top: "calc(50% + 2px)" }}
         />
 
