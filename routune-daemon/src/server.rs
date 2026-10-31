@@ -62,6 +62,20 @@ pub trait TelemetryMetricsProvider: Send + Sync {
     ) -> Result<(), &'static str> {
         Ok(())
     }
+    fn set_volume(
+        &self,
+        _channel: routune_core::graph::VirtualChannel,
+        _volume_db: f32,
+    ) -> Result<(), &'static str> {
+        Ok(())
+    }
+    fn set_mute(
+        &self,
+        _channel: routune_core::graph::VirtualChannel,
+        _muted: bool,
+    ) -> Result<(), &'static str> {
+        Ok(())
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -113,6 +127,22 @@ impl TelemetryMetricsProvider for crate::pipewire_bridge::PipeWireBridgeService 
         enabled: bool,
     ) -> Result<(), &'static str> {
         self.toggle_ai_noise(channel, enabled)
+    }
+
+    fn set_volume(
+        &self,
+        channel: routune_core::graph::VirtualChannel,
+        volume_db: f32,
+    ) -> Result<(), &'static str> {
+        self.update_volume(channel, volume_db)
+    }
+
+    fn set_mute(
+        &self,
+        channel: routune_core::graph::VirtualChannel,
+        muted: bool,
+    ) -> Result<(), &'static str> {
+        self.update_mute(channel, muted)
     }
 }
 
@@ -333,6 +363,103 @@ impl proto::routune_control_server::RoutuneControl for ControlServiceImpl {
         }
 
         Ok(Response::new(proto::Empty {}))
+    }
+
+    async fn set_channel_volume(
+        &self,
+        request: Request<proto::ChannelVolumeRequest>,
+    ) -> Result<Response<proto::Empty>, Status> {
+        let req = request.into_inner();
+        let virtual_channel = match proto::AudioChannel::try_from(req.channel) {
+            Ok(proto::AudioChannel::Master) => routune_core::graph::VirtualChannel::Master,
+            Ok(proto::AudioChannel::Game) => routune_core::graph::VirtualChannel::Game,
+            Ok(proto::AudioChannel::Chat) => routune_core::graph::VirtualChannel::Chat,
+            Ok(proto::AudioChannel::Media) => routune_core::graph::VirtualChannel::Media,
+            Ok(proto::AudioChannel::Aux) => routune_core::graph::VirtualChannel::Aux,
+            Err(_) => return Err(Status::invalid_argument("Invalid channel")),
+        };
+
+        let clamped_volume = req.volume_db.clamp(-48.0, 12.0);
+
+        if let Some(ref provider) = self.provider {
+            if let Err(err) = provider.set_volume(virtual_channel, clamped_volume) {
+                return Err(Status::internal(format!("Failed to set channel volume: {err}")));
+            }
+        }
+
+        if let Some(ref config_manager) = self.config_manager {
+            config_manager.set_volume(virtual_channel, clamped_volume).await;
+        }
+
+        Ok(Response::new(proto::Empty {}))
+    }
+
+    async fn set_channel_mute(
+        &self,
+        request: Request<proto::ChannelMuteRequest>,
+    ) -> Result<Response<proto::Empty>, Status> {
+        let req = request.into_inner();
+        let virtual_channel = match proto::AudioChannel::try_from(req.channel) {
+            Ok(proto::AudioChannel::Master) => routune_core::graph::VirtualChannel::Master,
+            Ok(proto::AudioChannel::Game) => routune_core::graph::VirtualChannel::Game,
+            Ok(proto::AudioChannel::Chat) => routune_core::graph::VirtualChannel::Chat,
+            Ok(proto::AudioChannel::Media) => routune_core::graph::VirtualChannel::Media,
+            Ok(proto::AudioChannel::Aux) => routune_core::graph::VirtualChannel::Aux,
+            Err(_) => return Err(Status::invalid_argument("Invalid channel")),
+        };
+
+        if let Some(ref provider) = self.provider {
+            if let Err(err) = provider.set_mute(virtual_channel, req.muted) {
+                return Err(Status::internal(format!("Failed to set channel mute: {err}")));
+            }
+        }
+
+        if let Some(ref config_manager) = self.config_manager {
+            config_manager.set_mute(virtual_channel, req.muted).await;
+        }
+
+        Ok(Response::new(proto::Empty {}))
+    }
+
+    async fn get_daemon_config(
+        &self,
+        _request: Request<proto::Empty>,
+    ) -> Result<Response<proto::DaemonConfigResponse>, Status> {
+        let cfg = if let Some(ref config_manager) = self.config_manager {
+            config_manager.get_config().await
+        } else {
+            routune_core::config::RoutuneConfig::default()
+        };
+
+        let channels = [
+            (proto::AudioChannel::Master, routune_core::graph::VirtualChannel::Master),
+            (proto::AudioChannel::Game, routune_core::graph::VirtualChannel::Game),
+            (proto::AudioChannel::Chat, routune_core::graph::VirtualChannel::Chat),
+            (proto::AudioChannel::Media, routune_core::graph::VirtualChannel::Media),
+            (proto::AudioChannel::Aux, routune_core::graph::VirtualChannel::Aux),
+        ];
+
+        let mut channel_states = Vec::new();
+        for (proto_ch, core_ch) in channels {
+            let route = cfg.get_route(core_ch).to_string();
+            let eq_bands = cfg.get_eq(core_ch).to_vec();
+            let noise_cancellation = cfg.get_noise_cancellation(core_ch);
+            let volume_db = cfg.get_volume(core_ch);
+            let muted = cfg.get_mute(core_ch);
+
+            channel_states.push(proto::ChannelConfigState {
+                channel: proto_ch as i32,
+                volume_db,
+                muted,
+                route_device: route,
+                eq_bands,
+                noise_cancellation,
+            });
+        }
+
+        Ok(Response::new(proto::DaemonConfigResponse {
+            channels: channel_states,
+        }))
     }
 }
 
@@ -884,6 +1011,99 @@ mod tests {
         let saved_cfg = routune_core::config::RoutuneConfig::load_or_default(&cfg_path);
         assert!(saved_cfg.get_noise_cancellation(routune_core::graph::VirtualChannel::Chat));
         assert!(!saved_cfg.get_noise_cancellation(routune_core::graph::VirtualChannel::Game));
+
+        let _ = std::fs::remove_file(&cfg_path);
+        let _ = std::fs::remove_dir(&temp_dir);
+    }
+
+    #[tokio::test]
+    async fn test_channel_volume_and_mute_rpc_and_persistence() {
+        use proto::routune_control_server::RoutuneControl;
+        use std::time::Duration;
+
+        let temp_dir = std::env::temp_dir().join("routune_vol_test");
+        let cfg_path = temp_dir.join("config.json");
+        let _ = std::fs::remove_file(&cfg_path);
+
+        let cfg_mgr = Arc::new(crate::config::ConfigManager::with_path(cfg_path.clone()).unwrap());
+
+        let is_active = Arc::new(AtomicBool::new(false));
+        let (tx, _) = broadcast::channel(16);
+        let (router, _) = crate::audio::ChannelRouter::new();
+        let router = Arc::new(tokio::sync::Mutex::new(router));
+
+        struct MockVolProvider {
+            last_vol: std::sync::Mutex<Option<(routune_core::graph::VirtualChannel, f32)>>,
+            last_mute: std::sync::Mutex<Option<(routune_core::graph::VirtualChannel, bool)>>,
+        }
+
+        impl TelemetryMetricsProvider for MockVolProvider {
+            fn get_sink_metrics(&self) -> Vec<proto::SinkMetric> { vec![] }
+            fn get_topology(&self) -> Option<proto::GraphTopology> { None }
+            fn get_master_metrics(&self) -> Option<(f32, f32)> { None }
+            fn get_channel_metrics(&self) -> Vec<proto::ChannelVolumeMetric> { vec![] }
+            fn is_active(&self) -> bool { true }
+            fn set_volume(&self, channel: routune_core::graph::VirtualChannel, vol: f32) -> Result<(), &'static str> {
+                *self.last_vol.lock().unwrap() = Some((channel, vol));
+                Ok(())
+            }
+            fn set_mute(&self, channel: routune_core::graph::VirtualChannel, muted: bool) -> Result<(), &'static str> {
+                *self.last_mute.lock().unwrap() = Some((channel, muted));
+                Ok(())
+            }
+        }
+
+        let mock_provider = Arc::new(MockVolProvider {
+            last_vol: std::sync::Mutex::new(None),
+            last_mute: std::sync::Mutex::new(None),
+        });
+
+        let service = ControlServiceImpl::new_with_config(
+            is_active,
+            tx,
+            Some(mock_provider.clone()),
+            router,
+            Some(cfg_mgr),
+        );
+
+        // 1. Test SetChannelVolume
+        let vol_req = tonic::Request::new(proto::ChannelVolumeRequest {
+            channel: proto::AudioChannel::Game as i32,
+            volume_db: -6.0,
+        });
+        let res = service.set_channel_volume(vol_req).await;
+        assert!(res.is_ok());
+
+        let (ch, v) = mock_provider.last_vol.lock().unwrap().take().unwrap();
+        assert_eq!(ch, routune_core::graph::VirtualChannel::Game);
+        assert!((v - (-6.0)).abs() < 0.001);
+
+        // 2. Test SetChannelMute
+        let mute_req = tonic::Request::new(proto::ChannelMuteRequest {
+            channel: proto::AudioChannel::Game as i32,
+            muted: true,
+        });
+        let res = service.set_channel_mute(mute_req).await;
+        assert!(res.is_ok());
+
+        let (ch, m) = mock_provider.last_mute.lock().unwrap().take().unwrap();
+        assert_eq!(ch, routune_core::graph::VirtualChannel::Game);
+        assert!(m);
+
+        // 3. Test persistence
+        tokio::time::sleep(Duration::from_millis(250)).await;
+        let saved_cfg = routune_core::config::RoutuneConfig::load_or_default(&cfg_path);
+        assert!((saved_cfg.get_volume(routune_core::graph::VirtualChannel::Game) - (-6.0)).abs() < 0.001);
+        assert!(saved_cfg.get_mute(routune_core::graph::VirtualChannel::Game));
+
+        // 4. Test GetDaemonConfig RPC
+        let config_res = service.get_daemon_config(tonic::Request::new(proto::Empty {})).await;
+        assert!(config_res.is_ok());
+        let channels = config_res.unwrap().into_inner().channels;
+        assert_eq!(channels.len(), 5);
+        let game_ch = channels.iter().find(|c| c.channel == proto::AudioChannel::Game as i32).unwrap();
+        assert!((game_ch.volume_db - (-6.0)).abs() < 0.001);
+        assert!(game_ch.muted);
 
         let _ = std::fs::remove_file(&cfg_path);
         let _ = std::fs::remove_dir(&temp_dir);

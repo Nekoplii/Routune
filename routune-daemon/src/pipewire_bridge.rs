@@ -87,6 +87,10 @@ struct VirtualSinkUserData {
     cmd_rx: crossbeam_channel::Receiver<GraphCommand>,
     scratch_buf: Box<[f32; SCRATCH_BUFFER_SAMPLES]>,
     scratch_buf_2: Box<[f32; SCRATCH_BUFFER_SAMPLES]>,
+    gain: f32,
+    muted: bool,
+    master_gain: f32,
+    master_muted: bool,
 }
 
 struct DesktopMonitorUserData {
@@ -528,6 +532,14 @@ impl PipeWireBridgeService {
                                 eq_node.set_band_gain(b, g);
                             }
                         }
+                        let init_vol = thread_config.as_ref().map(|c| c.get_volume($v_ch)).unwrap_or(0.0);
+                        let init_gain = if init_vol <= -48.0 { 0.0f32 } else { 10.0f32.powf(init_vol / 20.0) };
+                        let init_muted = thread_config.as_ref().map(|c| c.get_mute($v_ch)).unwrap_or(false);
+
+                        let init_m_vol = thread_config.as_ref().map(|c| c.get_volume(VirtualChannel::Master)).unwrap_or(0.0);
+                        let init_m_gain = if init_m_vol <= -48.0 { 0.0f32 } else { 10.0f32.powf(init_m_vol / 20.0) };
+                        let init_m_muted = thread_config.as_ref().map(|c| c.get_mute(VirtualChannel::Master)).unwrap_or(false);
+
                         let user_data = VirtualSinkUserData {
                             pusher: $pusher,
                             peak_db: $peak,
@@ -539,6 +551,10 @@ impl PipeWireBridgeService {
                             cmd_rx: $eq_rx,
                             scratch_buf: Box::new([0.0f32; SCRATCH_BUFFER_SAMPLES]),
                             scratch_buf_2: Box::new([0.0f32; SCRATCH_BUFFER_SAMPLES]),
+                            gain: init_gain,
+                            muted: init_muted,
+                            master_gain: init_m_gain,
+                            master_muted: init_m_muted,
                         };
                         match $stream
                             .add_local_listener_with_user_data(user_data)
@@ -551,6 +567,25 @@ impl PipeWireBridgeService {
                                         GraphCommand::ToggleAiNoise(_channel, enabled) => {
                                             data.ai_noise_node.set_enabled(enabled);
                                             data.noise_enabled.store(enabled, Ordering::Relaxed);
+                                        }
+                                        GraphCommand::UpdateVolume(channel, volume_db) => {
+                                            let linear = if volume_db <= -48.0 {
+                                                0.0f32
+                                            } else {
+                                                10.0f32.powf(volume_db / 20.0)
+                                            };
+                                            if channel == VirtualChannel::Master {
+                                                data.master_gain = linear;
+                                            } else {
+                                                data.gain = linear;
+                                            }
+                                        }
+                                        GraphCommand::UpdateMute(channel, muted) => {
+                                            if channel == VirtualChannel::Master {
+                                                data.master_muted = muted;
+                                            } else {
+                                                data.muted = muted;
+                                            }
                                         }
                                         _ => {}
                                     }
@@ -570,6 +605,23 @@ impl PipeWireBridgeService {
                                                     let len = floats.len().min(SCRATCH_BUFFER_SAMPLES);
                                                     data.ai_noise_node.process(&floats[..len], &mut data.scratch_buf_2[..len]);
                                                     data.eq_node.process(&data.scratch_buf_2[..len], &mut data.scratch_buf[..len]);
+
+                                                    let effective_gain = if data.muted || data.master_muted {
+                                                        0.0f32
+                                                    } else {
+                                                        data.gain * data.master_gain
+                                                    };
+
+                                                    if effective_gain == 0.0 {
+                                                        for s in &mut data.scratch_buf[..len] {
+                                                            *s = 0.0;
+                                                        }
+                                                    } else if (effective_gain - 1.0).abs() > 0.0001 {
+                                                        for s in &mut data.scratch_buf[..len] {
+                                                            *s = (*s * effective_gain).clamp(-1.0, 1.0);
+                                                        }
+                                                    }
+
                                                     let processed = &data.scratch_buf[..len];
 
                                                     let (peak, rms) = calculate_metrics(processed);
@@ -874,6 +926,62 @@ impl PipeWireBridgeService {
         }
         if let Ok(mut controller) = self.graph_controller.lock() {
             let _ = controller.toggle_ai_noise(channel, enabled);
+        }
+        Ok(())
+    }
+
+    pub fn update_volume(&self, channel: VirtualChannel, volume_db: f32) -> Result<(), &'static str> {
+        let cmd = GraphCommand::UpdateVolume(channel, volume_db);
+        match channel {
+            VirtualChannel::Game => {
+                let _ = self.game_eq_tx.try_send(cmd);
+            }
+            VirtualChannel::Chat => {
+                let _ = self.chat_eq_tx.try_send(cmd);
+            }
+            VirtualChannel::Media => {
+                let _ = self.media_eq_tx.try_send(cmd);
+            }
+            VirtualChannel::Aux => {
+                let _ = self.aux_eq_tx.try_send(cmd);
+            }
+            VirtualChannel::Master => {
+                let _ = self.game_eq_tx.try_send(GraphCommand::UpdateVolume(VirtualChannel::Master, volume_db));
+                let _ = self.chat_eq_tx.try_send(GraphCommand::UpdateVolume(VirtualChannel::Master, volume_db));
+                let _ = self.media_eq_tx.try_send(GraphCommand::UpdateVolume(VirtualChannel::Master, volume_db));
+                let _ = self.aux_eq_tx.try_send(GraphCommand::UpdateVolume(VirtualChannel::Master, volume_db));
+            }
+        }
+        if let Ok(mut controller) = self.graph_controller.lock() {
+            let _ = controller.update_volume(channel, volume_db);
+        }
+        Ok(())
+    }
+
+    pub fn update_mute(&self, channel: VirtualChannel, muted: bool) -> Result<(), &'static str> {
+        let cmd = GraphCommand::UpdateMute(channel, muted);
+        match channel {
+            VirtualChannel::Game => {
+                let _ = self.game_eq_tx.try_send(cmd);
+            }
+            VirtualChannel::Chat => {
+                let _ = self.chat_eq_tx.try_send(cmd);
+            }
+            VirtualChannel::Media => {
+                let _ = self.media_eq_tx.try_send(cmd);
+            }
+            VirtualChannel::Aux => {
+                let _ = self.aux_eq_tx.try_send(cmd);
+            }
+            VirtualChannel::Master => {
+                let _ = self.game_eq_tx.try_send(GraphCommand::UpdateMute(VirtualChannel::Master, muted));
+                let _ = self.chat_eq_tx.try_send(GraphCommand::UpdateMute(VirtualChannel::Master, muted));
+                let _ = self.media_eq_tx.try_send(GraphCommand::UpdateMute(VirtualChannel::Master, muted));
+                let _ = self.aux_eq_tx.try_send(GraphCommand::UpdateMute(VirtualChannel::Master, muted));
+            }
+        }
+        if let Ok(mut controller) = self.graph_controller.lock() {
+            let _ = controller.update_mute(channel, muted);
         }
         Ok(())
     }

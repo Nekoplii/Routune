@@ -331,6 +331,70 @@ export interface AiNoiseRequest {
     enabled: boolean;
 }
 /**
+ * @generated from protobuf message routune.ChannelVolumeRequest
+ */
+export interface ChannelVolumeRequest {
+    /**
+     * @generated from protobuf field: routune.AudioChannel channel = 1
+     */
+    channel: AudioChannel;
+    /**
+     * @generated from protobuf field: float volume_db = 2
+     */
+    volumeDb: number;
+}
+/**
+ * @generated from protobuf message routune.ChannelMuteRequest
+ */
+export interface ChannelMuteRequest {
+    /**
+     * @generated from protobuf field: routune.AudioChannel channel = 1
+     */
+    channel: AudioChannel;
+    /**
+     * @generated from protobuf field: bool muted = 2
+     */
+    muted: boolean;
+}
+/**
+ * @generated from protobuf message routune.ChannelConfigState
+ */
+export interface ChannelConfigState {
+    /**
+     * @generated from protobuf field: routune.AudioChannel channel = 1
+     */
+    channel: AudioChannel;
+    /**
+     * @generated from protobuf field: float volume_db = 2
+     */
+    volumeDb: number;
+    /**
+     * @generated from protobuf field: bool muted = 3
+     */
+    muted: boolean;
+    /**
+     * @generated from protobuf field: string route_device = 4
+     */
+    routeDevice: string;
+    /**
+     * @generated from protobuf field: repeated float eq_bands = 5
+     */
+    eqBands: number[];
+    /**
+     * @generated from protobuf field: bool noise_cancellation = 6
+     */
+    noiseCancellation: boolean;
+}
+/**
+ * @generated from protobuf message routune.DaemonConfigResponse
+ */
+export interface DaemonConfigResponse {
+    /**
+     * @generated from protobuf field: repeated routune.ChannelConfigState channels = 1
+     */
+    channels: ChannelConfigState[];
+}
+/**
  * @generated from protobuf enum routune.AudioChannel
  */
 export enum AudioChannel {
@@ -1550,6 +1614,258 @@ class AiNoiseRequest$Type extends MessageType<AiNoiseRequest> {
  * @generated MessageType for protobuf message routune.AiNoiseRequest
  */
 export const AiNoiseRequest = new AiNoiseRequest$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class ChannelVolumeRequest$Type extends MessageType<ChannelVolumeRequest> {
+    constructor() {
+        super("routune.ChannelVolumeRequest", [
+            { no: 1, name: "channel", kind: "enum", T: () => ["routune.AudioChannel", AudioChannel] },
+            { no: 2, name: "volume_db", kind: "scalar", T: 2 /*ScalarType.FLOAT*/ }
+        ]);
+    }
+    create(value?: PartialMessage<ChannelVolumeRequest>): ChannelVolumeRequest {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.channel = 0;
+        message.volumeDb = 0;
+        if (value !== undefined)
+            reflectionMergePartial<ChannelVolumeRequest>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: ChannelVolumeRequest): ChannelVolumeRequest {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* routune.AudioChannel channel */ 1:
+                    message.channel = reader.int32();
+                    break;
+                case /* float volume_db */ 2:
+                    message.volumeDb = reader.float();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: ChannelVolumeRequest, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* routune.AudioChannel channel = 1; */
+        if (message.channel !== 0)
+            writer.tag(1, WireType.Varint).int32(message.channel);
+        /* float volume_db = 2; */
+        if (message.volumeDb !== 0)
+            writer.tag(2, WireType.Bit32).float(message.volumeDb);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message routune.ChannelVolumeRequest
+ */
+export const ChannelVolumeRequest = new ChannelVolumeRequest$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class ChannelMuteRequest$Type extends MessageType<ChannelMuteRequest> {
+    constructor() {
+        super("routune.ChannelMuteRequest", [
+            { no: 1, name: "channel", kind: "enum", T: () => ["routune.AudioChannel", AudioChannel] },
+            { no: 2, name: "muted", kind: "scalar", T: 8 /*ScalarType.BOOL*/ }
+        ]);
+    }
+    create(value?: PartialMessage<ChannelMuteRequest>): ChannelMuteRequest {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.channel = 0;
+        message.muted = false;
+        if (value !== undefined)
+            reflectionMergePartial<ChannelMuteRequest>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: ChannelMuteRequest): ChannelMuteRequest {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* routune.AudioChannel channel */ 1:
+                    message.channel = reader.int32();
+                    break;
+                case /* bool muted */ 2:
+                    message.muted = reader.bool();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: ChannelMuteRequest, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* routune.AudioChannel channel = 1; */
+        if (message.channel !== 0)
+            writer.tag(1, WireType.Varint).int32(message.channel);
+        /* bool muted = 2; */
+        if (message.muted !== false)
+            writer.tag(2, WireType.Varint).bool(message.muted);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message routune.ChannelMuteRequest
+ */
+export const ChannelMuteRequest = new ChannelMuteRequest$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class ChannelConfigState$Type extends MessageType<ChannelConfigState> {
+    constructor() {
+        super("routune.ChannelConfigState", [
+            { no: 1, name: "channel", kind: "enum", T: () => ["routune.AudioChannel", AudioChannel] },
+            { no: 2, name: "volume_db", kind: "scalar", T: 2 /*ScalarType.FLOAT*/ },
+            { no: 3, name: "muted", kind: "scalar", T: 8 /*ScalarType.BOOL*/ },
+            { no: 4, name: "route_device", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 5, name: "eq_bands", kind: "scalar", repeat: 1 /*RepeatType.PACKED*/, T: 2 /*ScalarType.FLOAT*/ },
+            { no: 6, name: "noise_cancellation", kind: "scalar", T: 8 /*ScalarType.BOOL*/ }
+        ]);
+    }
+    create(value?: PartialMessage<ChannelConfigState>): ChannelConfigState {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.channel = 0;
+        message.volumeDb = 0;
+        message.muted = false;
+        message.routeDevice = "";
+        message.eqBands = [];
+        message.noiseCancellation = false;
+        if (value !== undefined)
+            reflectionMergePartial<ChannelConfigState>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: ChannelConfigState): ChannelConfigState {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* routune.AudioChannel channel */ 1:
+                    message.channel = reader.int32();
+                    break;
+                case /* float volume_db */ 2:
+                    message.volumeDb = reader.float();
+                    break;
+                case /* bool muted */ 3:
+                    message.muted = reader.bool();
+                    break;
+                case /* string route_device */ 4:
+                    message.routeDevice = reader.string();
+                    break;
+                case /* repeated float eq_bands */ 5:
+                    if (wireType === WireType.LengthDelimited)
+                        for (let e = reader.int32() + reader.pos; reader.pos < e;)
+                            message.eqBands.push(reader.float());
+                    else
+                        message.eqBands.push(reader.float());
+                    break;
+                case /* bool noise_cancellation */ 6:
+                    message.noiseCancellation = reader.bool();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: ChannelConfigState, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* routune.AudioChannel channel = 1; */
+        if (message.channel !== 0)
+            writer.tag(1, WireType.Varint).int32(message.channel);
+        /* float volume_db = 2; */
+        if (message.volumeDb !== 0)
+            writer.tag(2, WireType.Bit32).float(message.volumeDb);
+        /* bool muted = 3; */
+        if (message.muted !== false)
+            writer.tag(3, WireType.Varint).bool(message.muted);
+        /* string route_device = 4; */
+        if (message.routeDevice !== "")
+            writer.tag(4, WireType.LengthDelimited).string(message.routeDevice);
+        /* repeated float eq_bands = 5; */
+        if (message.eqBands.length) {
+            writer.tag(5, WireType.LengthDelimited).fork();
+            for (let i = 0; i < message.eqBands.length; i++)
+                writer.float(message.eqBands[i]);
+            writer.join();
+        }
+        /* bool noise_cancellation = 6; */
+        if (message.noiseCancellation !== false)
+            writer.tag(6, WireType.Varint).bool(message.noiseCancellation);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message routune.ChannelConfigState
+ */
+export const ChannelConfigState = new ChannelConfigState$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class DaemonConfigResponse$Type extends MessageType<DaemonConfigResponse> {
+    constructor() {
+        super("routune.DaemonConfigResponse", [
+            { no: 1, name: "channels", kind: "message", repeat: 2 /*RepeatType.UNPACKED*/, T: () => ChannelConfigState }
+        ]);
+    }
+    create(value?: PartialMessage<DaemonConfigResponse>): DaemonConfigResponse {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.channels = [];
+        if (value !== undefined)
+            reflectionMergePartial<DaemonConfigResponse>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: DaemonConfigResponse): DaemonConfigResponse {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* repeated routune.ChannelConfigState channels */ 1:
+                    message.channels.push(ChannelConfigState.internalBinaryRead(reader, reader.uint32(), options));
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: DaemonConfigResponse, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* repeated routune.ChannelConfigState channels = 1; */
+        for (let i = 0; i < message.channels.length; i++)
+            ChannelConfigState.internalBinaryWrite(message.channels[i], writer.tag(1, WireType.LengthDelimited).fork(), options).join();
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message routune.DaemonConfigResponse
+ */
+export const DaemonConfigResponse = new DaemonConfigResponse$Type();
 /**
  * @generated ServiceType for protobuf service routune.RoutuneControl
  */
@@ -1561,5 +1877,8 @@ export const RoutuneControl = new ServiceType("routune.RoutuneControl", [
     { name: "SetEqBand", options: {}, I: EqRequest, O: Empty },
     { name: "GetActiveApplications", options: {}, I: Empty, O: AppList },
     { name: "RouteApplication", options: {}, I: AppRouteRequest, O: Empty },
-    { name: "ToggleAiNoise", options: {}, I: AiNoiseRequest, O: Empty }
+    { name: "ToggleAiNoise", options: {}, I: AiNoiseRequest, O: Empty },
+    { name: "SetChannelVolume", options: {}, I: ChannelVolumeRequest, O: Empty },
+    { name: "SetChannelMute", options: {}, I: ChannelMuteRequest, O: Empty },
+    { name: "GetDaemonConfig", options: {}, I: Empty, O: DaemonConfigResponse }
 ]);

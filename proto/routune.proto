@@ -11,6 +11,9 @@ service RoutuneControl {
   rpc GetActiveApplications (Empty) returns (AppList);
   rpc RouteApplication (AppRouteRequest) returns (Empty);
   rpc ToggleAiNoise (AiNoiseRequest) returns (Empty);
+  rpc SetChannelVolume (ChannelVolumeRequest) returns (Empty);
+  rpc SetChannelMute (ChannelMuteRequest) returns (Empty);
+  rpc GetDaemonConfig (Empty) returns (DaemonConfigResponse);
 }
 
 message Empty {}
@@ -131,4 +134,27 @@ message AppRouteRequest {
 message AiNoiseRequest {
   AudioChannel channel = 1;
   bool enabled = 2;
+}
+
+message ChannelVolumeRequest {
+  AudioChannel channel = 1;
+  float volume_db = 2;
+}
+
+message ChannelMuteRequest {
+  AudioChannel channel = 1;
+  bool muted = 2;
+}
+
+message ChannelConfigState {
+  AudioChannel channel = 1;
+  float volume_db = 2;
+  bool muted = 3;
+  string route_device = 4;
+  repeated float eq_bands = 5;
+  bool noise_cancellation = 6;
+}
+
+message DaemonConfigResponse {
+  repeated ChannelConfigState channels = 1;
 }

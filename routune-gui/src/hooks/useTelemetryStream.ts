@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { routuneClient } from "../services/grpcClient";
 import { useAudioStore } from "../store/useAudioStore";
+import type { ChannelVolumeMetric } from "../proto/routune";
 
 export function useTelemetryStream() {
   const setConnectionStatus = useAudioStore((s) => s.setConnectionStatus);
@@ -35,23 +36,55 @@ export function useTelemetryStream() {
         setAudioActive(pingRes.audioActive);
         setConnectionStatus("connected");
 
-        // Fetch physical hardware output devices for Sonar routing dropdowns
+        // Fetch physical hardware output devices and authoritative daemon config
         useAudioStore.getState().fetchHardwareOutputs();
+        useAudioStore.getState().fetchDaemonConfig();
+        useAudioStore.getState().fetchActiveApps();
 
-        // 2. Consume server-streaming telemetry
+        // 2. Consume server-streaming telemetry with requestAnimationFrame throttling
         const streamCall = routuneClient.streamTelemetry(
           { targetFps: 60 },
           { abort: abortController.signal }
         );
 
+        let pendingChunk: {
+          peakDb: number;
+          rmsDb: number;
+          seq: string;
+          metrics?: ChannelVolumeMetric[];
+        } | null = null;
+        let rafId: number | null = null;
+
+        const scheduleFlush = () => {
+          if (rafId !== null) return;
+          rafId = requestAnimationFrame(() => {
+            rafId = null;
+            if (pendingChunk && !isCancelled) {
+              updateTelemetry(
+                pendingChunk.peakDb,
+                pendingChunk.rmsDb,
+                pendingChunk.seq,
+                pendingChunk.metrics
+              );
+              pendingChunk = null;
+            }
+          });
+        };
+
         for await (const chunk of streamCall.responses) {
           if (isCancelled) break;
-          updateTelemetry(
-            chunk.peakVolumeDb,
-            chunk.rmsVolumeDb,
-            chunk.sequenceNumber.toString(),
-            chunk.channelMetrics
-          );
+          pendingChunk = {
+            peakDb: chunk.peakVolumeDb,
+            rmsDb: chunk.rmsVolumeDb,
+            seq: chunk.sequenceNumber.toString(),
+            metrics: chunk.channelMetrics,
+          };
+          scheduleFlush();
+        }
+
+        if (rafId !== null) {
+          cancelAnimationFrame(rafId);
+          rafId = null;
         }
 
         // Stream completed gracefully

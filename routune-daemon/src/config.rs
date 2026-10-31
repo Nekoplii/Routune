@@ -108,6 +108,22 @@ impl ConfigManager {
         let _ = self.save_tx.try_send(());
     }
 
+    pub async fn set_volume(&self, channel: VirtualChannel, volume_db: f32) {
+        {
+            let mut guard = self.config.lock().await;
+            guard.set_volume(channel, volume_db);
+        }
+        let _ = self.save_tx.try_send(());
+    }
+
+    pub async fn set_mute(&self, channel: VirtualChannel, muted: bool) {
+        {
+            let mut guard = self.config.lock().await;
+            guard.set_mute(channel, muted);
+        }
+        let _ = self.save_tx.try_send(());
+    }
+
     #[allow(dead_code)]
     pub fn path(&self) -> &Path {
         &self.path

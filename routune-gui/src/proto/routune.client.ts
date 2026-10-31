@@ -4,6 +4,9 @@
 import type { RpcTransport } from "@protobuf-ts/runtime-rpc";
 import type { ServiceInfo } from "@protobuf-ts/runtime-rpc";
 import { RoutuneControl } from "./routune";
+import type { DaemonConfigResponse } from "./routune";
+import type { ChannelMuteRequest } from "./routune";
+import type { ChannelVolumeRequest } from "./routune";
 import type { AiNoiseRequest } from "./routune";
 import type { AppRouteRequest } from "./routune";
 import type { AppList } from "./routune";
@@ -56,6 +59,18 @@ export interface IRoutuneControlClient {
      * @generated from protobuf rpc: ToggleAiNoise
      */
     toggleAiNoise(input: AiNoiseRequest, options?: RpcOptions): UnaryCall<AiNoiseRequest, Empty>;
+    /**
+     * @generated from protobuf rpc: SetChannelVolume
+     */
+    setChannelVolume(input: ChannelVolumeRequest, options?: RpcOptions): UnaryCall<ChannelVolumeRequest, Empty>;
+    /**
+     * @generated from protobuf rpc: SetChannelMute
+     */
+    setChannelMute(input: ChannelMuteRequest, options?: RpcOptions): UnaryCall<ChannelMuteRequest, Empty>;
+    /**
+     * @generated from protobuf rpc: GetDaemonConfig
+     */
+    getDaemonConfig(input: Empty, options?: RpcOptions): UnaryCall<Empty, DaemonConfigResponse>;
 }
 /**
  * @generated from protobuf service routune.RoutuneControl
@@ -121,5 +136,26 @@ export class RoutuneControlClient implements IRoutuneControlClient, ServiceInfo 
     toggleAiNoise(input: AiNoiseRequest, options?: RpcOptions): UnaryCall<AiNoiseRequest, Empty> {
         const method = this.methods[7], opt = this._transport.mergeOptions(options);
         return stackIntercept<AiNoiseRequest, Empty>("unary", this._transport, method, opt, input);
+    }
+    /**
+     * @generated from protobuf rpc: SetChannelVolume
+     */
+    setChannelVolume(input: ChannelVolumeRequest, options?: RpcOptions): UnaryCall<ChannelVolumeRequest, Empty> {
+        const method = this.methods[8], opt = this._transport.mergeOptions(options);
+        return stackIntercept<ChannelVolumeRequest, Empty>("unary", this._transport, method, opt, input);
+    }
+    /**
+     * @generated from protobuf rpc: SetChannelMute
+     */
+    setChannelMute(input: ChannelMuteRequest, options?: RpcOptions): UnaryCall<ChannelMuteRequest, Empty> {
+        const method = this.methods[9], opt = this._transport.mergeOptions(options);
+        return stackIntercept<ChannelMuteRequest, Empty>("unary", this._transport, method, opt, input);
+    }
+    /**
+     * @generated from protobuf rpc: GetDaemonConfig
+     */
+    getDaemonConfig(input: Empty, options?: RpcOptions): UnaryCall<Empty, DaemonConfigResponse> {
+        const method = this.methods[10], opt = this._transport.mergeOptions(options);
+        return stackIntercept<Empty, DaemonConfigResponse>("unary", this._transport, method, opt, input);
     }
 }

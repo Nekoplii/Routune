@@ -727,6 +727,8 @@ pub enum GraphCommand {
     SetGain { id: String, gain: f32 },
     UpdateEq(VirtualChannel, usize, f32),
     ToggleAiNoise(VirtualChannel, bool),
+    UpdateVolume(VirtualChannel, f32),
+    UpdateMute(VirtualChannel, bool),
 }
 
 pub struct NodeSlot {
@@ -940,6 +942,39 @@ impl Graph {
                     if let Some(idx) = self.find_slot_by_id(noise_id) {
                         if let Some(slot) = &mut self.slots[idx] {
                             slot.node.set_ai_noise(enabled);
+                        }
+                    }
+                }
+                GraphCommand::UpdateVolume(channel, volume_db) => {
+                    let out_id = match channel {
+                        VirtualChannel::Master => "master-output",
+                        VirtualChannel::Game => "game-output",
+                        VirtualChannel::Chat => "chat-output",
+                        VirtualChannel::Media => "media-output",
+                        VirtualChannel::Aux => "aux-output",
+                    };
+                    if let Some(idx) = self.find_slot_by_id(out_id) {
+                        if let Some(slot) = &mut self.slots[idx] {
+                            let linear_gain = if volume_db <= -48.0 {
+                                0.0f32
+                            } else {
+                                10.0f32.powf(volume_db / 20.0)
+                            };
+                            slot.node.set_gain(linear_gain);
+                        }
+                    }
+                }
+                GraphCommand::UpdateMute(channel, muted) => {
+                    let out_id = match channel {
+                        VirtualChannel::Master => "master-output",
+                        VirtualChannel::Game => "game-output",
+                        VirtualChannel::Chat => "chat-output",
+                        VirtualChannel::Media => "media-output",
+                        VirtualChannel::Aux => "aux-output",
+                    };
+                    if let Some(idx) = self.find_slot_by_id(out_id) {
+                        if let Some(slot) = &mut self.slots[idx] {
+                            slot.node.set_bypassed(muted);
                         }
                     }
                 }
@@ -1201,6 +1236,28 @@ impl GraphController {
         if let Some(info) = self.node_infos.iter_mut().find(|n| n.id == noise_id) {
             info.bypassed = !enabled;
         }
+        Ok(())
+    }
+
+    pub fn update_volume(
+        &mut self,
+        channel: VirtualChannel,
+        volume_db: f32,
+    ) -> Result<(), &'static str> {
+        self.cmd_producer
+            .try_send(GraphCommand::UpdateVolume(channel, volume_db))
+            .map_err(|_| "Command queue full")?;
+        Ok(())
+    }
+
+    pub fn update_mute(
+        &mut self,
+        channel: VirtualChannel,
+        muted: bool,
+    ) -> Result<(), &'static str> {
+        self.cmd_producer
+            .try_send(GraphCommand::UpdateMute(channel, muted))
+            .map_err(|_| "Command queue full")?;
         Ok(())
     }
 

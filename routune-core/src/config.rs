@@ -51,6 +51,36 @@ pub struct ChannelNoiseConfig {
     pub aux: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ChannelVolumeConfig {
+    pub master: f32,
+    pub game: f32,
+    pub chat: f32,
+    pub media: f32,
+    pub aux: f32,
+}
+
+impl Default for ChannelVolumeConfig {
+    fn default() -> Self {
+        Self {
+            master: 0.0,
+            game: 0.0,
+            chat: 0.0,
+            media: 0.0,
+            aux: 0.0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct ChannelMuteConfig {
+    pub master: bool,
+    pub game: bool,
+    pub chat: bool,
+    pub media: bool,
+    pub aux: bool,
+}
+
 /// Persistent configuration for Routune daemon state.
 /// Holds hardware device mappings and 10-band EQ settings per channel.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
@@ -59,6 +89,10 @@ pub struct RoutuneConfig {
     pub eq: ChannelEqConfig,
     #[serde(default)]
     pub noise_cancellation: ChannelNoiseConfig,
+    #[serde(default)]
+    pub volume: ChannelVolumeConfig,
+    #[serde(default)]
+    pub mute: ChannelMuteConfig,
 }
 
 impl RoutuneConfig {
@@ -153,6 +187,47 @@ impl RoutuneConfig {
                 self.noise_cancellation.media = enabled;
                 self.noise_cancellation.aux = enabled;
             }
+        }
+    }
+
+    pub fn get_volume(&self, channel: VirtualChannel) -> f32 {
+        match channel {
+            VirtualChannel::Master => self.volume.master,
+            VirtualChannel::Game => self.volume.game,
+            VirtualChannel::Chat => self.volume.chat,
+            VirtualChannel::Media => self.volume.media,
+            VirtualChannel::Aux => self.volume.aux,
+        }
+    }
+
+    pub fn set_volume(&mut self, channel: VirtualChannel, volume_db: f32) {
+        let clamped = volume_db.clamp(-48.0, 12.0);
+        match channel {
+            VirtualChannel::Master => self.volume.master = clamped,
+            VirtualChannel::Game => self.volume.game = clamped,
+            VirtualChannel::Chat => self.volume.chat = clamped,
+            VirtualChannel::Media => self.volume.media = clamped,
+            VirtualChannel::Aux => self.volume.aux = clamped,
+        }
+    }
+
+    pub fn get_mute(&self, channel: VirtualChannel) -> bool {
+        match channel {
+            VirtualChannel::Master => self.mute.master,
+            VirtualChannel::Game => self.mute.game,
+            VirtualChannel::Chat => self.mute.chat,
+            VirtualChannel::Media => self.mute.media,
+            VirtualChannel::Aux => self.mute.aux,
+        }
+    }
+
+    pub fn set_mute(&mut self, channel: VirtualChannel, muted: bool) {
+        match channel {
+            VirtualChannel::Master => self.mute.master = muted,
+            VirtualChannel::Game => self.mute.game = muted,
+            VirtualChannel::Chat => self.mute.chat = muted,
+            VirtualChannel::Media => self.mute.media = muted,
+            VirtualChannel::Aux => self.mute.aux = muted,
         }
     }
 
