@@ -37,6 +37,14 @@ pub trait TelemetryMetricsProvider: Send + Sync {
     fn get_master_metrics(&self) -> Option<(f32, f32)>;
     fn get_channel_metrics(&self) -> Vec<proto::ChannelVolumeMetric>;
     fn is_active(&self) -> bool;
+    fn update_eq(
+        &self,
+        _channel: routune_core::graph::VirtualChannel,
+        _band_index: usize,
+        _gain_db: f32,
+    ) -> Result<(), &'static str> {
+        Ok(())
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -59,6 +67,15 @@ impl TelemetryMetricsProvider for crate::pipewire_bridge::PipeWireBridgeService 
 
     fn is_active(&self) -> bool {
         self.is_active.load(Ordering::Relaxed)
+    }
+
+    fn update_eq(
+        &self,
+        channel: routune_core::graph::VirtualChannel,
+        band_index: usize,
+        gain_db: f32,
+    ) -> Result<(), &'static str> {
+        self.update_eq(channel, band_index, gain_db)
     }
 }
 
@@ -163,6 +180,34 @@ impl proto::routune_control_server::RoutuneControl for ControlServiceImpl {
                 }))
             }
         }
+    }
+
+    async fn set_eq_band(
+        &self,
+        request: Request<proto::EqRequest>,
+    ) -> Result<Response<proto::Empty>, Status> {
+        let req = request.into_inner();
+        let virtual_channel = match proto::AudioChannel::try_from(req.channel) {
+            Ok(proto::AudioChannel::Master) => routune_core::graph::VirtualChannel::Master,
+            Ok(proto::AudioChannel::Game) => routune_core::graph::VirtualChannel::Game,
+            Ok(proto::AudioChannel::Chat) => routune_core::graph::VirtualChannel::Chat,
+            Ok(proto::AudioChannel::Media) => routune_core::graph::VirtualChannel::Media,
+            Ok(proto::AudioChannel::Aux) => routune_core::graph::VirtualChannel::Aux,
+            Err(_) => return Err(Status::invalid_argument("Invalid audio channel")),
+        };
+
+        if req.band_index >= 10 {
+            return Err(Status::invalid_argument("band_index must be between 0 and 9"));
+        }
+
+        let clamped_gain = req.gain_db.clamp(-12.0, 12.0);
+        if let Some(ref provider) = self.provider {
+            if let Err(err) = provider.update_eq(virtual_channel, req.band_index as usize, clamped_gain) {
+                return Err(Status::internal(format!("Failed to update EQ band: {err}")));
+            }
+        }
+
+        Ok(Response::new(proto::Empty {}))
     }
 }
 
@@ -439,5 +484,70 @@ mod tests {
         assert_eq!(second.rms_volume_db, -100.0);
 
         dispatcher_handle.abort();
+    }
+
+    #[tokio::test]
+    async fn test_set_eq_band_rpc() {
+        use proto::routune_control_server::RoutuneControl;
+
+        let is_active = Arc::new(AtomicBool::new(false));
+        let (tx, _) = broadcast::channel(16);
+        let (router, _) = crate::audio::ChannelRouter::new();
+        let router = Arc::new(tokio::sync::Mutex::new(router));
+
+        struct MockEqProvider {
+            last_update: std::sync::Mutex<Option<(routune_core::graph::VirtualChannel, usize, f32)>>,
+        }
+
+        impl TelemetryMetricsProvider for MockEqProvider {
+            fn get_sink_metrics(&self) -> Vec<proto::SinkMetric> { vec![] }
+            fn get_topology(&self) -> Option<proto::GraphTopology> { None }
+            fn get_master_metrics(&self) -> Option<(f32, f32)> { None }
+            fn get_channel_metrics(&self) -> Vec<proto::ChannelVolumeMetric> { vec![] }
+            fn is_active(&self) -> bool { false }
+            fn update_eq(
+                &self,
+                channel: routune_core::graph::VirtualChannel,
+                band_index: usize,
+                gain_db: f32,
+            ) -> Result<(), &'static str> {
+                *self.last_update.lock().unwrap() = Some((channel, band_index, gain_db));
+                Ok(())
+            }
+        }
+
+        let mock_provider = Arc::new(MockEqProvider {
+            last_update: std::sync::Mutex::new(None),
+        });
+
+        let service = ControlServiceImpl::new(
+            is_active,
+            tx,
+            Some(mock_provider.clone()),
+            router,
+        );
+
+        let req = tonic::Request::new(proto::EqRequest {
+            channel: proto::AudioChannel::Game as i32,
+            band_index: 3,
+            gain_db: 4.5,
+        });
+
+        let res = service.set_eq_band(req).await;
+        assert!(res.is_ok());
+
+        let last = mock_provider.last_update.lock().unwrap().take().unwrap();
+        assert_eq!(last.0, routune_core::graph::VirtualChannel::Game);
+        assert_eq!(last.1, 3);
+        assert!((last.2 - 4.5).abs() < 1e-4);
+
+        // Test invalid band index (> 9)
+        let invalid_req = tonic::Request::new(proto::EqRequest {
+            channel: proto::AudioChannel::Game as i32,
+            band_index: 10,
+            gain_db: 0.0,
+        });
+        let invalid_res = service.set_eq_band(invalid_req).await;
+        assert!(invalid_res.is_err());
     }
 }

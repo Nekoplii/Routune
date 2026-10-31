@@ -7,8 +7,8 @@ use std::thread::JoinHandle;
 use tracing::info;
 
 use routune_core::graph::{
-    calculate_metrics, AudioEngineGraph, DspBypassNode, GraphController,
-    PhysicalOutputNode, ResamplerNode, VirtualInputNode,
+    calculate_metrics, AudioEngineGraph, AudioNode, DspBypassNode, EqNode, GraphCommand,
+    GraphController, PhysicalOutputNode, ResamplerNode, VirtualChannel, VirtualInputNode,
 };
 
 use crate::audio::ChannelPusher;
@@ -25,6 +25,9 @@ struct VirtualSinkUserData {
     peak_db: Arc<AtomicU32>,
     rms_db: Arc<AtomicU32>,
     is_active: Arc<AtomicBool>,
+    eq_node: EqNode,
+    cmd_rx: crossbeam_channel::Receiver<GraphCommand>,
+    scratch_buf: Box<[f32; SCRATCH_BUFFER_SAMPLES]>,
 }
 
 struct DesktopMonitorUserData {
@@ -37,6 +40,10 @@ pub struct PipeWireBridgeService {
     thread_handle: Option<JoinHandle<()>>,
     shutdown_sender: pw::channel::Sender<BridgeShutdown>,
     graph_controller: Arc<std::sync::Mutex<GraphController>>,
+    game_eq_tx: crossbeam_channel::Sender<GraphCommand>,
+    chat_eq_tx: crossbeam_channel::Sender<GraphCommand>,
+    media_eq_tx: crossbeam_channel::Sender<GraphCommand>,
+    aux_eq_tx: crossbeam_channel::Sender<GraphCommand>,
     pub is_active: Arc<AtomicBool>,
     pub game_peak: Arc<AtomicU32>,
     pub game_rms: Arc<AtomicU32>,
@@ -72,27 +79,35 @@ impl PipeWireBridgeService {
         let desktop_peak = Arc::new(AtomicU32::new((-100.0f32).to_bits()));
         let desktop_rms = Arc::new(AtomicU32::new((-100.0f32).to_bits()));
 
+        let (game_eq_tx, game_eq_rx) = crossbeam_channel::bounded(64);
+        let (chat_eq_tx, chat_eq_rx) = crossbeam_channel::bounded(64);
+        let (media_eq_tx, media_eq_rx) = crossbeam_channel::bounded(64);
+        let (aux_eq_tx, aux_eq_rx) = crossbeam_channel::bounded(64);
+
         // Setup default graph: 4 independent channel chains -> channel-specific PhysicalOutputNode
         let channels = [
-            ("routune-game", "Routune Game", "game-resampler", "Game Resampler", "game-bypass", "Game DSP Bypass", "game-output", "Game Output"),
-            ("routune-chat", "Routune Chat", "chat-resampler", "Chat Resampler", "chat-bypass", "Chat DSP Bypass", "chat-output", "Chat Output"),
-            ("routune-media", "Routune Media", "media-resampler", "Media Resampler", "media-bypass", "Media DSP Bypass", "media-output", "Media Output"),
-            ("routune-aux", "Routune Aux", "aux-resampler", "Aux Resampler", "aux-bypass", "Aux DSP Bypass", "aux-output", "Aux Output"),
+            ("routune-game", "Routune Game", "game-eq", "Game Equalizer", "game-resampler", "Game Resampler", "game-bypass", "Game DSP Bypass", "game-output", "Game Output"),
+            ("routune-chat", "Routune Chat", "chat-eq", "Chat Equalizer", "chat-resampler", "Chat Resampler", "chat-bypass", "Chat DSP Bypass", "chat-output", "Chat Output"),
+            ("routune-media", "Routune Media", "media-eq", "Media Equalizer", "media-resampler", "Media Resampler", "media-bypass", "Media DSP Bypass", "media-output", "Media Output"),
+            ("routune-aux", "Routune Aux", "aux-eq", "Aux Equalizer", "aux-resampler", "Aux Resampler", "aux-bypass", "Aux DSP Bypass", "aux-output", "Aux Output"),
         ];
 
-        for (in_id, in_name, resamp_id, resamp_name, bypass_id, bypass_name, out_id, out_name) in channels {
+        for (in_id, in_name, eq_id, eq_name, resamp_id, resamp_name, bypass_id, bypass_name, out_id, out_name) in channels {
             let in_node = VirtualInputNode::new(in_id, in_name, in_id);
+            let eq_node = EqNode::new(eq_id, eq_name, 48000);
             let resamp_node = ResamplerNode::new(resamp_id, resamp_name, 48000, 48000, 2, 256)
                 .map_err(|e| anyhow::anyhow!("Failed to create {resamp_name}: {:?}", e))?;
             let bypass_node = DspBypassNode::new(bypass_id, bypass_name);
             let out_node = PhysicalOutputNode::new(out_id, out_name, "unassigned");
 
             controller.add_node(Box::new(in_node)).map_err(|e| anyhow::anyhow!(e))?;
+            controller.add_node(Box::new(eq_node)).map_err(|e| anyhow::anyhow!(e))?;
             controller.add_node(Box::new(resamp_node)).map_err(|e| anyhow::anyhow!(e))?;
             controller.add_node(Box::new(bypass_node)).map_err(|e| anyhow::anyhow!(e))?;
             controller.add_node(Box::new(out_node)).map_err(|e| anyhow::anyhow!(e))?;
 
-            controller.connect(in_id, resamp_id).map_err(|e| anyhow::anyhow!(e))?;
+            controller.connect(in_id, eq_id).map_err(|e| anyhow::anyhow!(e))?;
+            controller.connect(eq_id, resamp_id).map_err(|e| anyhow::anyhow!(e))?;
             controller.connect(resamp_id, bypass_id).map_err(|e| anyhow::anyhow!(e))?;
             controller.connect(bypass_id, out_id).map_err(|e| anyhow::anyhow!(e))?;
         }
@@ -119,6 +134,11 @@ impl PipeWireBridgeService {
         let t_desktop_peak = desktop_peak.clone();
         let t_desktop_rms = desktop_rms.clone();
         let t_is_active = is_active.clone();
+
+        let t_game_eq_rx = game_eq_rx;
+        let t_chat_eq_rx = chat_eq_rx;
+        let t_media_eq_rx = media_eq_rx;
+        let t_aux_eq_rx = aux_eq_rx;
 
         let thread_handle = std::thread::Builder::new()
             .name("pipewire-bridge".into())
@@ -254,16 +274,25 @@ impl PipeWireBridgeService {
 
                 // Helper to attach sink listener
                 macro_rules! register_sink_listener {
-                    ($stream:expr, $pusher:expr, $peak:expr, $rms:expr, $active:expr, $name:expr) => {{
+                    ($stream:expr, $pusher:expr, $peak:expr, $rms:expr, $active:expr, $eq_rx:expr, $eq_id:expr, $eq_name:expr, $name:expr) => {{
                         let user_data = VirtualSinkUserData {
                             pusher: $pusher,
                             peak_db: $peak,
                             rms_db: $rms,
                             is_active: $active,
+                            eq_node: EqNode::new($eq_id, $eq_name, 48000),
+                            cmd_rx: $eq_rx,
+                            scratch_buf: Box::new([0.0f32; SCRATCH_BUFFER_SAMPLES]),
                         };
                         match $stream
                             .add_local_listener_with_user_data(user_data)
                             .process(|stream, data| {
+                                while let Ok(cmd) = data.cmd_rx.try_recv() {
+                                    if let GraphCommand::UpdateEq(_channel, band, gain) = cmd {
+                                        data.eq_node.set_band_gain(band, gain);
+                                    }
+                                }
+
                                 if let Some(mut buf) = stream.dequeue_buffer() {
                                     let datas = buf.datas_mut();
                                     if !datas.is_empty() {
@@ -275,7 +304,11 @@ impl PipeWireBridgeService {
                                                 let raw_bytes = &slice[offset..offset + size];
                                                 let (prefix, floats, _) = unsafe { raw_bytes.align_to::<f32>() };
                                                 if prefix.is_empty() && !floats.is_empty() {
-                                                    let (peak, rms) = calculate_metrics(floats);
+                                                    let len = floats.len().min(SCRATCH_BUFFER_SAMPLES);
+                                                    data.eq_node.process(&floats[..len], &mut data.scratch_buf[..len]);
+                                                    let processed = &data.scratch_buf[..len];
+
+                                                    let (peak, rms) = calculate_metrics(processed);
                                                     data.peak_db.store(peak.to_bits(), Ordering::Relaxed);
                                                     data.rms_db.store(rms.to_bits(), Ordering::Relaxed);
                                                     if peak > -80.0 {
@@ -284,7 +317,7 @@ impl PipeWireBridgeService {
 
                                                     if let Ok(mut guard) = data.pusher.try_lock() {
                                                         if let Some(prod) = guard.as_mut() {
-                                                            for &sample in floats {
+                                                            for &sample in processed {
                                                                 let _ = prod.push(sample);
                                                             }
                                                         }
@@ -306,10 +339,10 @@ impl PipeWireBridgeService {
                     }};
                 }
 
-                let _game_listener = register_sink_listener!(game_stream, t_game_pusher, t_game_peak, t_game_rms, t_is_active.clone(), "game");
-                let _chat_listener = register_sink_listener!(chat_stream, t_chat_pusher, t_chat_peak, t_chat_rms, t_is_active.clone(), "chat");
-                let _media_listener = register_sink_listener!(media_stream, t_media_pusher, t_media_peak, t_media_rms, t_is_active.clone(), "media");
-                let _aux_listener = register_sink_listener!(aux_stream, t_aux_pusher, t_aux_peak, t_aux_rms, t_is_active.clone(), "aux");
+                let _game_listener = register_sink_listener!(game_stream, t_game_pusher, t_game_peak, t_game_rms, t_is_active.clone(), t_game_eq_rx, "game-eq", "Game Equalizer", "game");
+                let _chat_listener = register_sink_listener!(chat_stream, t_chat_pusher, t_chat_peak, t_chat_rms, t_is_active.clone(), t_chat_eq_rx, "chat-eq", "Chat Equalizer", "chat");
+                let _media_listener = register_sink_listener!(media_stream, t_media_pusher, t_media_peak, t_media_rms, t_is_active.clone(), t_media_eq_rx, "media-eq", "Media Equalizer", "media");
+                let _aux_listener = register_sink_listener!(aux_stream, t_aux_pusher, t_aux_peak, t_aux_rms, t_is_active.clone(), t_aux_eq_rx, "aux-eq", "Aux Equalizer", "aux");
 
                 let monitor_user_data = DesktopMonitorUserData {
                     desktop_peak: t_desktop_peak,
@@ -418,6 +451,10 @@ impl PipeWireBridgeService {
             thread_handle: Some(thread_handle),
             shutdown_sender,
             graph_controller: Arc::new(std::sync::Mutex::new(controller)),
+            game_eq_tx,
+            chat_eq_tx,
+            media_eq_tx,
+            aux_eq_tx,
             is_active,
             game_peak,
             game_rms,
@@ -430,6 +467,37 @@ impl PipeWireBridgeService {
             desktop_peak,
             desktop_rms,
         })
+    }
+
+    pub fn update_eq(
+        &self,
+        channel: VirtualChannel,
+        band_index: usize,
+        gain_db: f32,
+    ) -> Result<(), &'static str> {
+        let cmd = GraphCommand::UpdateEq(channel, band_index, gain_db);
+        match channel {
+            VirtualChannel::Game => {
+                let _ = self.game_eq_tx.try_send(cmd);
+            }
+            VirtualChannel::Chat => {
+                let _ = self.chat_eq_tx.try_send(cmd);
+            }
+            VirtualChannel::Media => {
+                let _ = self.media_eq_tx.try_send(cmd);
+            }
+            VirtualChannel::Aux => {
+                let _ = self.aux_eq_tx.try_send(cmd);
+            }
+            VirtualChannel::Master => {
+                let _ = self.game_eq_tx.try_send(GraphCommand::UpdateEq(VirtualChannel::Game, band_index, gain_db));
+                let _ = self.chat_eq_tx.try_send(GraphCommand::UpdateEq(VirtualChannel::Chat, band_index, gain_db));
+                let _ = self.media_eq_tx.try_send(GraphCommand::UpdateEq(VirtualChannel::Media, band_index, gain_db));
+                let _ = self.aux_eq_tx.try_send(GraphCommand::UpdateEq(VirtualChannel::Aux, band_index, gain_db));
+            }
+        }
+        let _ = self.graph_controller.lock().unwrap().update_eq(channel, band_index, gain_db);
+        Ok(())
     }
 
     pub fn get_sink_metrics(&self) -> Vec<SinkMetric> {
@@ -532,19 +600,19 @@ impl PipeWireBridgeService {
             .iter()
             .map(|info| {
                 let (peak, rms) = match info.id.as_str() {
-                    "routune-game" | "game-output" => (
+                    "routune-game" | "game-eq" | "game-output" => (
                         f32::from_bits(self.game_peak.load(Ordering::Relaxed)),
                         f32::from_bits(self.game_rms.load(Ordering::Relaxed)),
                     ),
-                    "routune-chat" | "chat-output" => (
+                    "routune-chat" | "chat-eq" | "chat-output" => (
                         f32::from_bits(self.chat_peak.load(Ordering::Relaxed)),
                         f32::from_bits(self.chat_rms.load(Ordering::Relaxed)),
                     ),
-                    "routune-media" | "media-output" => (
+                    "routune-media" | "media-eq" | "media-output" => (
                         f32::from_bits(self.media_peak.load(Ordering::Relaxed)),
                         f32::from_bits(self.media_rms.load(Ordering::Relaxed)),
                     ),
-                    "routune-aux" | "aux-output" => (
+                    "routune-aux" | "aux-eq" | "aux-output" => (
                         f32::from_bits(self.aux_peak.load(Ordering::Relaxed)),
                         f32::from_bits(self.aux_rms.load(Ordering::Relaxed)),
                     ),
@@ -704,8 +772,11 @@ mod tests {
                 assert_eq!(channel_metrics[4].channel_name, "Aux");
 
                 let topology = service.get_topology();
-                assert_eq!(topology.nodes.len(), 16);
-                assert_eq!(topology.edges.len(), 12);
+                assert_eq!(topology.nodes.len(), 20);
+                assert_eq!(topology.edges.len(), 16);
+
+                let eq_res = service.update_eq(VirtualChannel::Game, 3, 5.0);
+                assert!(eq_res.is_ok());
 
                 service.shutdown();
             }
