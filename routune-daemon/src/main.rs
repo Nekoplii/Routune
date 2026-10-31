@@ -1,4 +1,5 @@
 mod audio;
+mod config;
 #[cfg(target_os = "linux")]
 mod pipewire_bridge;
 mod server;
@@ -11,6 +12,7 @@ use tokio::sync::broadcast;
 use tonic::transport::Server;
 use tracing::{info, warn};
 
+use routune_core::graph::VirtualChannel;
 use server::proto::routune_control_server::RoutuneControlServer;
 use server::{ControlServiceImpl, TelemetryMetricsProvider};
 
@@ -20,17 +22,37 @@ async fn main() -> Result<()> {
 
     info!("Starting Routune audio daemon service");
 
-    // 1. Initialize Sonar per-channel router and pushers
-    let (channel_router, pusher) = audio::ChannelRouter::new();
+    // 1. Load persistent configuration from ~/.config/routune/config.json
+    let config_manager = Arc::new(config::ConfigManager::init()?);
+    let initial_config = config_manager.get_config().await;
+
+    // 2. Initialize Sonar per-channel router and pushers
+    let (mut channel_router, pusher) = audio::ChannelRouter::new();
     let is_active = Arc::new(AtomicBool::new(false));
+
+    // 3. Map physical hardware outputs from persistent configuration
+    let routes = [
+        (server::proto::AudioChannel::Game as i32, initial_config.get_route(VirtualChannel::Game)),
+        (server::proto::AudioChannel::Chat as i32, initial_config.get_route(VirtualChannel::Chat)),
+        (server::proto::AudioChannel::Media as i32, initial_config.get_route(VirtualChannel::Media)),
+        (server::proto::AudioChannel::Aux as i32, initial_config.get_route(VirtualChannel::Aux)),
+    ];
+    for (ch, target) in routes {
+        if !target.is_empty() && !target.eq_ignore_ascii_case("none") && !target.eq_ignore_ascii_case("unassigned") {
+            match channel_router.set_channel_routing(ch, target) {
+                Ok(act) => info!("Restored persisted hardware route for channel {ch} -> {act}"),
+                Err(e) => warn!("Failed to restore route for channel {ch} to {target}: {e}"),
+            }
+        }
+    }
     let channel_router = Arc::new(tokio::sync::Mutex::new(channel_router));
 
-    // 2. Initialize Linux PipeWire virtual audio routing and node graph
+    // 4. Build PipeWire virtual audio routing and inject preloaded EqNodes
     #[cfg(target_os = "linux")]
     let (pipewire_service, provider): (
         Option<Arc<pipewire_bridge::PipeWireBridgeService>>,
         Option<Arc<dyn TelemetryMetricsProvider>>,
-    ) = match pipewire_bridge::PipeWireBridgeService::start(pusher) {
+    ) = match pipewire_bridge::PipeWireBridgeService::start_with_config(pusher, Some(&initial_config)) {
         Ok(service) => {
             info!("PipeWire virtual audio bridge running with 4 virtual sinks ('routune-game', 'routune-chat', 'routune-media', 'routune-aux')");
             let arc_service = Arc::new(service);
@@ -45,7 +67,7 @@ async fn main() -> Result<()> {
     #[cfg(not(target_os = "linux"))]
     let provider: Option<Arc<dyn TelemetryMetricsProvider>> = None;
 
-    // 3. Setup lock-free telemetry dispatcher
+    // 5. Setup lock-free telemetry dispatcher
     let (telemetry_tx, _) = broadcast::channel(128);
     let dispatcher_handle = tokio::spawn(server::run_telemetry_dispatcher(
         None,
@@ -54,12 +76,13 @@ async fn main() -> Result<()> {
         Some(channel_router.clone()),
     ));
 
-    // 4. Initialize gRPC control service
-    let control_service = ControlServiceImpl::new(
+    // 6. Initialize gRPC control service with persistence manager
+    let control_service = ControlServiceImpl::new_with_config(
         is_active,
         telemetry_tx,
         provider,
         channel_router.clone(),
+        Some(config_manager.clone()),
     );
     let control_server = RoutuneControlServer::new(control_service);
     let web_control_server = tonic_web::enable(control_server);

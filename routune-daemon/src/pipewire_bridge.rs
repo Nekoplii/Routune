@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::thread::JoinHandle;
 use tracing::info;
 
+use routune_core::config::RoutuneConfig;
 use routune_core::graph::{
     calculate_metrics, AudioEngineGraph, AudioNode, DspBypassNode, EqNode, GraphCommand,
     GraphController, PhysicalOutputNode, ResamplerNode, VirtualChannel, VirtualInputNode,
@@ -58,7 +59,15 @@ pub struct PipeWireBridgeService {
 }
 
 impl PipeWireBridgeService {
+    #[allow(dead_code)]
     pub fn start(pusher: ChannelPusher) -> anyhow::Result<Self> {
+        Self::start_with_config(pusher, None)
+    }
+
+    pub fn start_with_config(
+        pusher: ChannelPusher,
+        config: Option<&RoutuneConfig>,
+    ) -> anyhow::Result<Self> {
         pw::init();
 
         let (cmd_tx, cmd_rx) = crossbeam_channel::bounded(128);
@@ -86,19 +95,26 @@ impl PipeWireBridgeService {
 
         // Setup default graph: 4 independent channel chains -> channel-specific PhysicalOutputNode
         let channels = [
-            ("routune-game", "Routune Game", "game-eq", "Game Equalizer", "game-resampler", "Game Resampler", "game-bypass", "Game DSP Bypass", "game-output", "Game Output"),
-            ("routune-chat", "Routune Chat", "chat-eq", "Chat Equalizer", "chat-resampler", "Chat Resampler", "chat-bypass", "Chat DSP Bypass", "chat-output", "Chat Output"),
-            ("routune-media", "Routune Media", "media-eq", "Media Equalizer", "media-resampler", "Media Resampler", "media-bypass", "Media DSP Bypass", "media-output", "Media Output"),
-            ("routune-aux", "Routune Aux", "aux-eq", "Aux Equalizer", "aux-resampler", "Aux Resampler", "aux-bypass", "Aux DSP Bypass", "aux-output", "Aux Output"),
+            ("routune-game", "Routune Game", "game-eq", "Game Equalizer", "game-resampler", "Game Resampler", "game-bypass", "Game DSP Bypass", "game-output", "Game Output", VirtualChannel::Game),
+            ("routune-chat", "Routune Chat", "chat-eq", "Chat Equalizer", "chat-resampler", "Chat Resampler", "chat-bypass", "Chat DSP Bypass", "chat-output", "Chat Output", VirtualChannel::Chat),
+            ("routune-media", "Routune Media", "media-eq", "Media Equalizer", "media-resampler", "Media Resampler", "media-bypass", "Media DSP Bypass", "media-output", "Media Output", VirtualChannel::Media),
+            ("routune-aux", "Routune Aux", "aux-eq", "Aux Equalizer", "aux-resampler", "Aux Resampler", "aux-bypass", "Aux DSP Bypass", "aux-output", "Aux Output", VirtualChannel::Aux),
         ];
 
-        for (in_id, in_name, eq_id, eq_name, resamp_id, resamp_name, bypass_id, bypass_name, out_id, out_name) in channels {
+        for (in_id, in_name, eq_id, eq_name, resamp_id, resamp_name, bypass_id, bypass_name, out_id, out_name, v_ch) in channels {
             let in_node = VirtualInputNode::new(in_id, in_name, in_id);
-            let eq_node = EqNode::new(eq_id, eq_name, 48000);
+            let mut eq_node = EqNode::new(eq_id, eq_name, 48000);
+            if let Some(cfg) = config {
+                let gains = cfg.get_eq(v_ch);
+                for (b, &g) in gains.iter().enumerate() {
+                    eq_node.set_band_gain(b, g);
+                }
+            }
             let resamp_node = ResamplerNode::new(resamp_id, resamp_name, 48000, 48000, 2, 256)
                 .map_err(|e| anyhow::anyhow!("Failed to create {resamp_name}: {:?}", e))?;
             let bypass_node = DspBypassNode::new(bypass_id, bypass_name);
-            let out_node = PhysicalOutputNode::new(out_id, out_name, "unassigned");
+            let target_device = config.map(|c| c.get_route(v_ch)).unwrap_or("unassigned");
+            let out_node = PhysicalOutputNode::new(out_id, out_name, target_device);
 
             controller.add_node(Box::new(in_node)).map_err(|e| anyhow::anyhow!(e))?;
             controller.add_node(Box::new(eq_node)).map_err(|e| anyhow::anyhow!(e))?;
@@ -139,6 +155,8 @@ impl PipeWireBridgeService {
         let t_chat_eq_rx = chat_eq_rx;
         let t_media_eq_rx = media_eq_rx;
         let t_aux_eq_rx = aux_eq_rx;
+
+        let thread_config = config.cloned();
 
         let thread_handle = std::thread::Builder::new()
             .name("pipewire-bridge".into())
@@ -274,13 +292,20 @@ impl PipeWireBridgeService {
 
                 // Helper to attach sink listener
                 macro_rules! register_sink_listener {
-                    ($stream:expr, $pusher:expr, $peak:expr, $rms:expr, $active:expr, $eq_rx:expr, $eq_id:expr, $eq_name:expr, $name:expr) => {{
+                    ($stream:expr, $pusher:expr, $peak:expr, $rms:expr, $active:expr, $eq_rx:expr, $eq_id:expr, $eq_name:expr, $v_ch:expr, $name:expr) => {{
+                        let mut eq_node = EqNode::new($eq_id, $eq_name, 48000);
+                        if let Some(ref cfg) = thread_config {
+                            let gains = cfg.get_eq($v_ch);
+                            for (b, &g) in gains.iter().enumerate() {
+                                eq_node.set_band_gain(b, g);
+                            }
+                        }
                         let user_data = VirtualSinkUserData {
                             pusher: $pusher,
                             peak_db: $peak,
                             rms_db: $rms,
                             is_active: $active,
-                            eq_node: EqNode::new($eq_id, $eq_name, 48000),
+                            eq_node,
                             cmd_rx: $eq_rx,
                             scratch_buf: Box::new([0.0f32; SCRATCH_BUFFER_SAMPLES]),
                         };
@@ -339,10 +364,10 @@ impl PipeWireBridgeService {
                     }};
                 }
 
-                let _game_listener = register_sink_listener!(game_stream, t_game_pusher, t_game_peak, t_game_rms, t_is_active.clone(), t_game_eq_rx, "game-eq", "Game Equalizer", "game");
-                let _chat_listener = register_sink_listener!(chat_stream, t_chat_pusher, t_chat_peak, t_chat_rms, t_is_active.clone(), t_chat_eq_rx, "chat-eq", "Chat Equalizer", "chat");
-                let _media_listener = register_sink_listener!(media_stream, t_media_pusher, t_media_peak, t_media_rms, t_is_active.clone(), t_media_eq_rx, "media-eq", "Media Equalizer", "media");
-                let _aux_listener = register_sink_listener!(aux_stream, t_aux_pusher, t_aux_peak, t_aux_rms, t_is_active.clone(), t_aux_eq_rx, "aux-eq", "Aux Equalizer", "aux");
+                let _game_listener = register_sink_listener!(game_stream, t_game_pusher, t_game_peak, t_game_rms, t_is_active.clone(), t_game_eq_rx, "game-eq", "Game Equalizer", VirtualChannel::Game, "game");
+                let _chat_listener = register_sink_listener!(chat_stream, t_chat_pusher, t_chat_peak, t_chat_rms, t_is_active.clone(), t_chat_eq_rx, "chat-eq", "Chat Equalizer", VirtualChannel::Chat, "chat");
+                let _media_listener = register_sink_listener!(media_stream, t_media_pusher, t_media_peak, t_media_rms, t_is_active.clone(), t_media_eq_rx, "media-eq", "Media Equalizer", VirtualChannel::Media, "media");
+                let _aux_listener = register_sink_listener!(aux_stream, t_aux_pusher, t_aux_peak, t_aux_rms, t_is_active.clone(), t_aux_eq_rx, "aux-eq", "Aux Equalizer", VirtualChannel::Aux, "aux");
 
                 let monitor_user_data = DesktopMonitorUserData {
                     desktop_peak: t_desktop_peak,

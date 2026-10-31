@@ -84,20 +84,33 @@ pub struct ControlServiceImpl {
     telemetry_tx: broadcast::Sender<proto::AudioTelemetry>,
     provider: Option<Arc<dyn TelemetryMetricsProvider>>,
     router: Arc<tokio::sync::Mutex<crate::audio::ChannelRouter>>,
+    config_manager: Option<Arc<crate::config::ConfigManager>>,
 }
 
 impl ControlServiceImpl {
+    #[allow(dead_code)]
     pub fn new(
         is_audio_active: Arc<AtomicBool>,
         telemetry_tx: broadcast::Sender<proto::AudioTelemetry>,
         provider: Option<Arc<dyn TelemetryMetricsProvider>>,
         router: Arc<tokio::sync::Mutex<crate::audio::ChannelRouter>>,
     ) -> Self {
+        Self::new_with_config(is_audio_active, telemetry_tx, provider, router, None)
+    }
+
+    pub fn new_with_config(
+        is_audio_active: Arc<AtomicBool>,
+        telemetry_tx: broadcast::Sender<proto::AudioTelemetry>,
+        provider: Option<Arc<dyn TelemetryMetricsProvider>>,
+        router: Arc<tokio::sync::Mutex<crate::audio::ChannelRouter>>,
+        config_manager: Option<Arc<crate::config::ConfigManager>>,
+    ) -> Self {
         Self {
             is_audio_active,
             telemetry_tx,
             provider,
             router,
+            config_manager,
         }
     }
 }
@@ -164,12 +177,26 @@ impl proto::routune_control_server::RoutuneControl for ControlServiceImpl {
         let req = request.into_inner();
         let mut router = self.router.lock().await;
         match router.set_channel_routing(req.channel, &req.target_hardware_device_name) {
-            Ok(active_name) => Ok(Response::new(proto::RouteResponse {
-                success: true,
-                message: format!("Successfully routed channel to {active_name}"),
-                channel: req.channel,
-                active_device_name: active_name,
-            })),
+            Ok(active_name) => {
+                if let Some(ref config_manager) = self.config_manager {
+                    let v_ch = match proto::AudioChannel::try_from(req.channel) {
+                        Ok(proto::AudioChannel::Game) => Some(routune_core::graph::VirtualChannel::Game),
+                        Ok(proto::AudioChannel::Chat) => Some(routune_core::graph::VirtualChannel::Chat),
+                        Ok(proto::AudioChannel::Media) => Some(routune_core::graph::VirtualChannel::Media),
+                        Ok(proto::AudioChannel::Aux) => Some(routune_core::graph::VirtualChannel::Aux),
+                        _ => None,
+                    };
+                    if let Some(ch) = v_ch {
+                        config_manager.set_route(ch, &req.target_hardware_device_name).await;
+                    }
+                }
+                Ok(Response::new(proto::RouteResponse {
+                    success: true,
+                    message: format!("Successfully routed channel to {active_name}"),
+                    channel: req.channel,
+                    active_device_name: active_name,
+                }))
+            }
             Err(e) => {
                 tracing::warn!("Failed to set channel routing: {e:?}");
                 Ok(Response::new(proto::RouteResponse {
@@ -205,6 +232,10 @@ impl proto::routune_control_server::RoutuneControl for ControlServiceImpl {
             if let Err(err) = provider.update_eq(virtual_channel, req.band_index as usize, clamped_gain) {
                 return Err(Status::internal(format!("Failed to update EQ band: {err}")));
             }
+        }
+
+        if let Some(ref config_manager) = self.config_manager {
+            config_manager.set_eq_band(virtual_channel, req.band_index as usize, clamped_gain).await;
         }
 
         Ok(Response::new(proto::Empty {}))
@@ -549,5 +580,61 @@ mod tests {
         });
         let invalid_res = service.set_eq_band(invalid_req).await;
         assert!(invalid_res.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_set_channel_routing_and_eq_persistence() {
+        use proto::routune_control_server::RoutuneControl;
+        use std::time::Duration;
+
+        let temp_dir = std::env::temp_dir().join("routune_server_persist_test");
+        let cfg_path = temp_dir.join("config.json");
+        let _ = std::fs::remove_file(&cfg_path);
+
+        let cfg_mgr = Arc::new(crate::config::ConfigManager::with_path(cfg_path.clone()).unwrap());
+
+        let is_active = Arc::new(AtomicBool::new(false));
+        let (tx, _) = broadcast::channel(16);
+        let (router, _) = crate::audio::ChannelRouter::new();
+        let router = Arc::new(tokio::sync::Mutex::new(router));
+
+        let service = ControlServiceImpl::new_with_config(
+            is_active,
+            tx,
+            None,
+            router,
+            Some(cfg_mgr.clone()),
+        );
+
+        // 1. Test routing persistence (unassigning / setting none)
+        let route_req = tonic::Request::new(proto::RouteRequest {
+            channel: proto::AudioChannel::Chat as i32,
+            target_hardware_device_name: "none".to_string(),
+        });
+        let route_res = service.set_channel_routing(route_req).await;
+        assert!(route_res.is_ok());
+
+        // 2. Test EQ persistence
+        let eq_req = tonic::Request::new(proto::EqRequest {
+            channel: proto::AudioChannel::Chat as i32,
+            band_index: 4,
+            gain_db: 6.0,
+        });
+        let eq_res = service.set_eq_band(eq_req).await;
+        assert!(eq_res.is_ok());
+
+        // In-memory check
+        let in_memory = cfg_mgr.get_config().await;
+        assert_eq!(in_memory.get_route(routune_core::graph::VirtualChannel::Chat), "none");
+        assert_eq!(in_memory.get_eq(routune_core::graph::VirtualChannel::Chat)[4], 6.0);
+
+        // 3. Debounced disk write check
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        let loaded = routune_core::config::RoutuneConfig::load_or_default(&cfg_path);
+        assert_eq!(loaded.get_route(routune_core::graph::VirtualChannel::Chat), "none");
+        assert_eq!(loaded.get_eq(routune_core::graph::VirtualChannel::Chat)[4], 6.0);
+
+        let _ = std::fs::remove_file(&cfg_path);
+        let _ = std::fs::remove_dir(&temp_dir);
     }
 }
