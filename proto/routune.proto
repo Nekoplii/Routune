@@ -8,6 +8,8 @@ service RoutuneControl {
   rpc GetHardwareOutputs (Empty) returns (DeviceList);
   rpc SetChannelRouting (RouteRequest) returns (RouteResponse);
   rpc SetEqBand (EqRequest) returns (Empty);
+  rpc GetActiveApplications (Empty) returns (AppList);
+  rpc RouteApplication (AppRouteRequest) returns (Empty);
 }
 
 message Empty {}
@@ -105,4 +107,21 @@ message AudioTelemetry {
   repeated SinkMetric sink_metrics = 5;
   GraphTopology topology = 6;
   repeated ChannelVolumeMetric channel_metrics = 7;
+}
+
+message AppStream {
+  uint32 app_id = 1;
+  string name = 2;
+  string icon_name = 3;
+  AudioChannel current_sink = 4;
+  string current_sink_name = 5;
+}
+
+message AppList {
+  repeated AppStream apps = 1;
+}
+
+message AppRouteRequest {
+  uint32 app_id = 1;
+  AudioChannel target_channel = 2;
 }

@@ -267,6 +267,53 @@ export interface AudioTelemetry {
     channelMetrics: ChannelVolumeMetric[];
 }
 /**
+ * @generated from protobuf message routune.AppStream
+ */
+export interface AppStream {
+    /**
+     * @generated from protobuf field: uint32 app_id = 1
+     */
+    appId: number;
+    /**
+     * @generated from protobuf field: string name = 2
+     */
+    name: string;
+    /**
+     * @generated from protobuf field: string icon_name = 3
+     */
+    iconName: string;
+    /**
+     * @generated from protobuf field: routune.AudioChannel current_sink = 4
+     */
+    currentSink: AudioChannel;
+    /**
+     * @generated from protobuf field: string current_sink_name = 5
+     */
+    currentSinkName: string;
+}
+/**
+ * @generated from protobuf message routune.AppList
+ */
+export interface AppList {
+    /**
+     * @generated from protobuf field: repeated routune.AppStream apps = 1
+     */
+    apps: AppStream[];
+}
+/**
+ * @generated from protobuf message routune.AppRouteRequest
+ */
+export interface AppRouteRequest {
+    /**
+     * @generated from protobuf field: uint32 app_id = 1
+     */
+    appId: number;
+    /**
+     * @generated from protobuf field: routune.AudioChannel target_channel = 2
+     */
+    targetChannel: AudioChannel;
+}
+/**
  * @generated from protobuf enum routune.AudioChannel
  */
 export enum AudioChannel {
@@ -1242,6 +1289,187 @@ class AudioTelemetry$Type extends MessageType<AudioTelemetry> {
  * @generated MessageType for protobuf message routune.AudioTelemetry
  */
 export const AudioTelemetry = new AudioTelemetry$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class AppStream$Type extends MessageType<AppStream> {
+    constructor() {
+        super("routune.AppStream", [
+            { no: 1, name: "app_id", kind: "scalar", T: 13 /*ScalarType.UINT32*/ },
+            { no: 2, name: "name", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 3, name: "icon_name", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 4, name: "current_sink", kind: "enum", T: () => ["routune.AudioChannel", AudioChannel] },
+            { no: 5, name: "current_sink_name", kind: "scalar", T: 9 /*ScalarType.STRING*/ }
+        ]);
+    }
+    create(value?: PartialMessage<AppStream>): AppStream {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.appId = 0;
+        message.name = "";
+        message.iconName = "";
+        message.currentSink = 0;
+        message.currentSinkName = "";
+        if (value !== undefined)
+            reflectionMergePartial<AppStream>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: AppStream): AppStream {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* uint32 app_id */ 1:
+                    message.appId = reader.uint32();
+                    break;
+                case /* string name */ 2:
+                    message.name = reader.string();
+                    break;
+                case /* string icon_name */ 3:
+                    message.iconName = reader.string();
+                    break;
+                case /* routune.AudioChannel current_sink */ 4:
+                    message.currentSink = reader.int32();
+                    break;
+                case /* string current_sink_name */ 5:
+                    message.currentSinkName = reader.string();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: AppStream, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* uint32 app_id = 1; */
+        if (message.appId !== 0)
+            writer.tag(1, WireType.Varint).uint32(message.appId);
+        /* string name = 2; */
+        if (message.name !== "")
+            writer.tag(2, WireType.LengthDelimited).string(message.name);
+        /* string icon_name = 3; */
+        if (message.iconName !== "")
+            writer.tag(3, WireType.LengthDelimited).string(message.iconName);
+        /* routune.AudioChannel current_sink = 4; */
+        if (message.currentSink !== 0)
+            writer.tag(4, WireType.Varint).int32(message.currentSink);
+        /* string current_sink_name = 5; */
+        if (message.currentSinkName !== "")
+            writer.tag(5, WireType.LengthDelimited).string(message.currentSinkName);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message routune.AppStream
+ */
+export const AppStream = new AppStream$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class AppList$Type extends MessageType<AppList> {
+    constructor() {
+        super("routune.AppList", [
+            { no: 1, name: "apps", kind: "message", repeat: 2 /*RepeatType.UNPACKED*/, T: () => AppStream }
+        ]);
+    }
+    create(value?: PartialMessage<AppList>): AppList {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.apps = [];
+        if (value !== undefined)
+            reflectionMergePartial<AppList>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: AppList): AppList {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* repeated routune.AppStream apps */ 1:
+                    message.apps.push(AppStream.internalBinaryRead(reader, reader.uint32(), options));
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: AppList, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* repeated routune.AppStream apps = 1; */
+        for (let i = 0; i < message.apps.length; i++)
+            AppStream.internalBinaryWrite(message.apps[i], writer.tag(1, WireType.LengthDelimited).fork(), options).join();
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message routune.AppList
+ */
+export const AppList = new AppList$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class AppRouteRequest$Type extends MessageType<AppRouteRequest> {
+    constructor() {
+        super("routune.AppRouteRequest", [
+            { no: 1, name: "app_id", kind: "scalar", T: 13 /*ScalarType.UINT32*/ },
+            { no: 2, name: "target_channel", kind: "enum", T: () => ["routune.AudioChannel", AudioChannel] }
+        ]);
+    }
+    create(value?: PartialMessage<AppRouteRequest>): AppRouteRequest {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.appId = 0;
+        message.targetChannel = 0;
+        if (value !== undefined)
+            reflectionMergePartial<AppRouteRequest>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: AppRouteRequest): AppRouteRequest {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* uint32 app_id */ 1:
+                    message.appId = reader.uint32();
+                    break;
+                case /* routune.AudioChannel target_channel */ 2:
+                    message.targetChannel = reader.int32();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: AppRouteRequest, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* uint32 app_id = 1; */
+        if (message.appId !== 0)
+            writer.tag(1, WireType.Varint).uint32(message.appId);
+        /* routune.AudioChannel target_channel = 2; */
+        if (message.targetChannel !== 0)
+            writer.tag(2, WireType.Varint).int32(message.targetChannel);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message routune.AppRouteRequest
+ */
+export const AppRouteRequest = new AppRouteRequest$Type();
 /**
  * @generated ServiceType for protobuf service routune.RoutuneControl
  */
@@ -1250,5 +1478,7 @@ export const RoutuneControl = new ServiceType("routune.RoutuneControl", [
     { name: "StreamTelemetry", serverStreaming: true, options: {}, I: TelemetryRequest, O: AudioTelemetry },
     { name: "GetHardwareOutputs", options: {}, I: Empty, O: DeviceList },
     { name: "SetChannelRouting", options: {}, I: RouteRequest, O: RouteResponse },
-    { name: "SetEqBand", options: {}, I: EqRequest, O: Empty }
+    { name: "SetEqBand", options: {}, I: EqRequest, O: Empty },
+    { name: "GetActiveApplications", options: {}, I: Empty, O: AppList },
+    { name: "RouteApplication", options: {}, I: AppRouteRequest, O: Empty }
 ]);
