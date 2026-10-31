@@ -5,6 +5,42 @@ package routune;
 service RoutuneControl {
   rpc Ping (PingRequest) returns (PingResponse);
   rpc StreamTelemetry (TelemetryRequest) returns (stream AudioTelemetry);
+  rpc GetHardwareOutputs (Empty) returns (DeviceList);
+  rpc SetChannelRouting (RouteRequest) returns (RouteResponse);
+}
+
+message Empty {}
+
+message OutputDeviceInfo {
+  string id = 1;
+  string name = 2;
+  string display_name = 3;
+  uint32 channels = 4;
+  uint32 sample_rate = 5;
+}
+
+message DeviceList {
+  repeated OutputDeviceInfo devices = 1;
+}
+
+message RouteRequest {
+  AudioChannel channel = 1;
+  string target_hardware_device_name = 2;
+}
+
+message RouteResponse {
+  bool success = 1;
+  string message = 2;
+  AudioChannel channel = 3;
+  string active_device_name = 4;
+}
+
+enum AudioChannel {
+  MASTER = 0;
+  GAME = 1;
+  CHAT = 2;
+  MEDIA = 3;
+  AUX = 4;
 }
 
 message PingRequest {
@@ -19,6 +55,13 @@ message PingResponse {
 
 message TelemetryRequest {
   uint32 target_fps = 1;
+}
+
+message ChannelVolumeMetric {
+  AudioChannel channel = 1;
+  string channel_name = 2;
+  float peak_volume_db = 3;
+  float rms_volume_db = 4;
 }
 
 message SinkMetric {
@@ -54,4 +97,5 @@ message AudioTelemetry {
   uint64 sequence_number = 4;
   repeated SinkMetric sink_metrics = 5;
   GraphTopology topology = 6;
+  repeated ChannelVolumeMetric channel_metrics = 7;
 }
