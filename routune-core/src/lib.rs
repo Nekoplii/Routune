@@ -1,7 +1,9 @@
+pub mod ai_noise;
 pub mod config;
 pub mod graph;
 
-pub use config::{ChannelEqConfig, ChannelRoutingConfig, RoutuneConfig};
+pub use ai_noise::AiNoiseNode;
+pub use config::{ChannelEqConfig, ChannelNoiseConfig, ChannelRoutingConfig, RoutuneConfig};
 pub use graph::{
     AudioEngineGraph, AudioNode, BypassNode, Channel, DspBypassNode, EqNode, Graph, GraphCommand,
     GraphController, NodeInfo, PhysicalOutputNode, PipeWireInputNode, ProcessContext,

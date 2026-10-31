@@ -43,12 +43,22 @@ impl Default for ChannelEqConfig {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct ChannelNoiseConfig {
+    pub game: bool,
+    pub chat: bool,
+    pub media: bool,
+    pub aux: bool,
+}
+
 /// Persistent configuration for Routune daemon state.
 /// Holds hardware device mappings and 10-band EQ settings per channel.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct RoutuneConfig {
     pub routing: ChannelRoutingConfig,
     pub eq: ChannelEqConfig,
+    #[serde(default)]
+    pub noise_cancellation: ChannelNoiseConfig,
 }
 
 impl RoutuneConfig {
@@ -117,6 +127,31 @@ impl RoutuneConfig {
                 self.eq.chat = gains;
                 self.eq.media = gains;
                 self.eq.aux = gains;
+            }
+        }
+    }
+
+    pub fn get_noise_cancellation(&self, channel: VirtualChannel) -> bool {
+        match channel {
+            VirtualChannel::Game => self.noise_cancellation.game,
+            VirtualChannel::Chat => self.noise_cancellation.chat,
+            VirtualChannel::Media => self.noise_cancellation.media,
+            VirtualChannel::Aux => self.noise_cancellation.aux,
+            VirtualChannel::Master => false,
+        }
+    }
+
+    pub fn set_noise_cancellation(&mut self, channel: VirtualChannel, enabled: bool) {
+        match channel {
+            VirtualChannel::Game => self.noise_cancellation.game = enabled,
+            VirtualChannel::Chat => self.noise_cancellation.chat = enabled,
+            VirtualChannel::Media => self.noise_cancellation.media = enabled,
+            VirtualChannel::Aux => self.noise_cancellation.aux = enabled,
+            VirtualChannel::Master => {
+                self.noise_cancellation.game = enabled;
+                self.noise_cancellation.chat = enabled;
+                self.noise_cancellation.media = enabled;
+                self.noise_cancellation.aux = enabled;
             }
         }
     }

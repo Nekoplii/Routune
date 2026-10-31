@@ -82,6 +82,10 @@ pub trait AudioNode: Send {
     fn set_bypassed(&mut self, _bypassed: bool) {}
     fn set_gain(&mut self, _gain: f32) {}
     fn set_eq_band(&mut self, _band_index: usize, _gain_db: f32) {}
+    fn set_ai_noise(&mut self, _enabled: bool) {}
+    fn is_ai_noise_enabled(&self) -> bool {
+        false
+    }
     fn reset(&mut self) {}
     fn peak_db(&self) -> f32 {
         -100.0
@@ -722,6 +726,7 @@ pub enum GraphCommand {
     SetBypass { id: String, bypassed: bool },
     SetGain { id: String, gain: f32 },
     UpdateEq(VirtualChannel, usize, f32),
+    ToggleAiNoise(VirtualChannel, bool),
 }
 
 pub struct NodeSlot {
@@ -921,6 +926,20 @@ impl Graph {
                     if let Some(idx) = self.find_slot_by_id(eq_id) {
                         if let Some(slot) = &mut self.slots[idx] {
                             slot.node.set_eq_band(band_index, gain_db);
+                        }
+                    }
+                }
+                GraphCommand::ToggleAiNoise(channel, enabled) => {
+                    let noise_id = match channel {
+                        VirtualChannel::Master => "master-noise",
+                        VirtualChannel::Game => "game-noise",
+                        VirtualChannel::Chat => "chat-noise",
+                        VirtualChannel::Media => "media-noise",
+                        VirtualChannel::Aux => "aux-noise",
+                    };
+                    if let Some(idx) = self.find_slot_by_id(noise_id) {
+                        if let Some(slot) = &mut self.slots[idx] {
+                            slot.node.set_ai_noise(enabled);
                         }
                     }
                 }
@@ -1161,6 +1180,27 @@ impl GraphController {
         self.cmd_producer
             .try_send(GraphCommand::UpdateEq(channel, band_index, gain_db))
             .map_err(|_| "Command queue full")?;
+        Ok(())
+    }
+
+    pub fn toggle_ai_noise(
+        &mut self,
+        channel: VirtualChannel,
+        enabled: bool,
+    ) -> Result<(), &'static str> {
+        let noise_id = match channel {
+            VirtualChannel::Master => "master-noise",
+            VirtualChannel::Game => "game-noise",
+            VirtualChannel::Chat => "chat-noise",
+            VirtualChannel::Media => "media-noise",
+            VirtualChannel::Aux => "aux-noise",
+        };
+        self.cmd_producer
+            .try_send(GraphCommand::ToggleAiNoise(channel, enabled))
+            .map_err(|_| "Command queue full")?;
+        if let Some(info) = self.node_infos.iter_mut().find(|n| n.id == noise_id) {
+            info.bypassed = !enabled;
+        }
         Ok(())
     }
 
