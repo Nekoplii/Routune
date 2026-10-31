@@ -29,25 +29,38 @@ pub fn calculate_metrics(samples: &[f32]) -> (f32, f32) {
     if samples.is_empty() {
         return (-100.0, -100.0);
     }
-    let mut peak = 0.0f32;
-    let mut sum_sq = 0.0f32;
-    for &sample in samples {
-        let abs = sample.abs();
-        if abs > peak {
-            peak = abs;
-        }
-        sum_sq += sample * sample;
-    }
-    let rms = (sum_sq / samples.len() as f32).sqrt();
+    // Strictly reset accumulator variables per chunk to prevent infinite peak hold
+    let mut current_peak = 0.0f32;
+    let mut sum_squares = 0.0f32;
+    let mut valid_count = 0usize;
 
-    let peak_db = if peak > 1e-5 {
-        20.0 * peak.log10()
+    for &sample in samples {
+        if sample.is_nan() || sample.is_infinite() {
+            continue;
+        }
+        let clamped = sample.clamp(-1.0, 1.0);
+        let abs = clamped.abs();
+        if abs > current_peak {
+            current_peak = abs;
+        }
+        sum_squares += clamped * clamped;
+        valid_count += 1;
+    }
+
+    if valid_count == 0 {
+        return (-100.0, -100.0);
+    }
+
+    let rms = (sum_squares / valid_count as f32).sqrt();
+
+    let peak_db = if current_peak > 1e-5 {
+        (20.0 * current_peak.log10()).clamp(-100.0, 0.0)
     } else {
         -100.0
     };
 
     let rms_db = if rms > 1e-5 {
-        20.0 * rms.log10()
+        (20.0 * rms.log10()).clamp(-100.0, 0.0)
     } else {
         -100.0
     };
