@@ -570,16 +570,20 @@ export function DspTuningView() {
               {/* Toggle Switch */}
               <button
                 type="button"
+                role="switch"
+                aria-checked={isAiNoiseActive}
                 onClick={() => toggleAiNoise(selectedChannel, !isAiNoiseActive)}
                 disabled={!isConnected}
-                className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors duration-200 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
-                  isAiNoiseActive ? "bg-[#ff5511]" : "bg-[#2c2c36]"
+                className={`relative inline-flex h-6 w-11 shrink-0 p-0.5 items-center rounded-full transition-colors duration-200 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed border-0 ${
+                  isAiNoiseActive
+                    ? "bg-[#ff5511] shadow-[0_0_12px_rgba(255,85,17,0.4)]"
+                    : "bg-[#282832] ring-1 ring-white/10 hover:ring-white/20"
                 }`}
                 aria-label="Toggle AI Noise Suppression"
               >
                 <span
-                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-200 ${
-                    isAiNoiseActive ? "translate-x-5.5" : "translate-x-1"
+                  className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-md shadow-black/50 transition-transform duration-200 ease-out pointer-events-none ${
+                    isAiNoiseActive ? "translate-x-5" : "translate-x-0"
                   }`}
                 />
               </button>

@@ -187,13 +187,15 @@ export function EqualizerPanel() {
             <span className="hidden sm:inline font-medium">AI Noise Suppression (RNNoise)</span>
             <span className="inline sm:hidden font-medium">AI Noise</span>
             <div
-              className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors duration-200 ease-in-out ${
-                isAiNoiseActive ? "bg-emerald-500" : "bg-zinc-700"
+              className={`relative inline-flex h-5 w-9 shrink-0 p-0.5 items-center rounded-full transition-colors duration-200 ease-in-out ${
+                isAiNoiseActive
+                  ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]"
+                  : "bg-zinc-700 ring-1 ring-white/10"
               }`}
             >
               <span
-                className={`inline-block h-2.5 w-2.5 transform rounded-full bg-white shadow transition-transform duration-200 ease-in-out ${
-                  isAiNoiseActive ? "translate-x-3.5" : "translate-x-0.5"
+                className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm shadow-black/40 transition-transform duration-200 ease-out pointer-events-none ${
+                  isAiNoiseActive ? "translate-x-4" : "translate-x-0"
                 }`}
               />
             </div>
