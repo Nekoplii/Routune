@@ -1,0 +1,286 @@
+import { useRef, useCallback } from "react";
+import {
+  Activity,
+  RotateCcw,
+  Gamepad2,
+  MessageSquare,
+  Music,
+  Radio,
+} from "lucide-react";
+import { useAudioStore } from "../store/useAudioStore";
+import { AudioChannel } from "../proto/routune";
+import { routuneClient } from "../services/grpcClient";
+
+export interface EqBandDef {
+  index: number;
+  freqHz: number;
+  label: string;
+}
+
+export const EQ_BANDS: EqBandDef[] = [
+  { index: 0, freqHz: 31, label: "31Hz" },
+  { index: 1, freqHz: 62, label: "62Hz" },
+  { index: 2, freqHz: 125, label: "125Hz" },
+  { index: 3, freqHz: 250, label: "250Hz" },
+  { index: 4, freqHz: 500, label: "500Hz" },
+  { index: 5, freqHz: 1000, label: "1kHz" },
+  { index: 6, freqHz: 2000, label: "2kHz" },
+  { index: 7, freqHz: 4000, label: "4kHz" },
+  { index: 8, freqHz: 8000, label: "8kHz" },
+  { index: 9, freqHz: 16000, label: "16kHz" },
+];
+
+const CHANNEL_TABS = [
+  {
+    id: AudioChannel.GAME,
+    name: "Game",
+    icon: Gamepad2,
+    activeColor: "text-emerald-400",
+    activeBorder: "border-emerald-500/40",
+    activeBg: "bg-emerald-500/10",
+    thumbClass: "text-emerald-400",
+  },
+  {
+    id: AudioChannel.CHAT,
+    name: "Chat",
+    icon: MessageSquare,
+    activeColor: "text-sky-400",
+    activeBorder: "border-sky-500/40",
+    activeBg: "bg-sky-500/10",
+    thumbClass: "text-sky-400",
+  },
+  {
+    id: AudioChannel.MEDIA,
+    name: "Media",
+    icon: Music,
+    activeColor: "text-purple-400",
+    activeBorder: "border-purple-500/40",
+    activeBg: "bg-purple-500/10",
+    thumbClass: "text-purple-400",
+  },
+  {
+    id: AudioChannel.AUX,
+    name: "Aux",
+    icon: Radio,
+    activeColor: "text-amber-400",
+    activeBorder: "border-amber-500/40",
+    activeBg: "bg-amber-500/10",
+    thumbClass: "text-amber-400",
+  },
+];
+
+export function EqualizerPanel() {
+  const selectedChannel = useAudioStore((s) => s.selectedEqChannel);
+  const setSelectedChannel = useAudioStore((s) => s.setSelectedEqChannel);
+  const eqBands = useAudioStore((s) => s.eqBands);
+  const setEqBandGain = useAudioStore((s) => s.setEqBandGain);
+  const resetChannelEq = useAudioStore((s) => s.resetChannelEq);
+  const isConnected = useAudioStore((s) => s.connectionStatus === "connected");
+
+  const activeChannelConfig =
+    CHANNEL_TABS.find((t) => t.id === selectedChannel) || CHANNEL_TABS[0];
+  const channelGains = eqBands[selectedChannel] || [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+
+  // Debounce timers keyed by `${channel}-${bandIndex}`
+  const debounceTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
+  const dispatchSetEqBand = useCallback(
+    (channel: AudioChannel, bandIndex: number, gainDb: number) => {
+      // 1. Immediately update UI state (lock-free feel, 60fps)
+      setEqBandGain(channel, bandIndex, gainDb);
+
+      // 2. Debounce IPC gRPC call by 50ms to prevent stream saturation during drag
+      const key = `${channel}-${bandIndex}`;
+      if (debounceTimers.current[key]) {
+        clearTimeout(debounceTimers.current[key]);
+      }
+
+      debounceTimers.current[key] = setTimeout(() => {
+        routuneClient
+          .setEqBand({
+            channel,
+            bandIndex,
+            gainDb,
+          })
+          .response.catch((err) => {
+            console.warn(
+              `Failed to send SetEqBand for ch=${channel} band=${bandIndex}:`,
+              err
+            );
+          });
+        delete debounceTimers.current[key];
+      }, 50);
+    },
+    [setEqBandGain]
+  );
+
+  const handleResetFlat = useCallback(() => {
+    resetChannelEq(selectedChannel);
+    // Send 0.0 dB for all 10 bands immediately
+    for (let i = 0; i < 10; i++) {
+      const key = `${selectedChannel}-${i}`;
+      if (debounceTimers.current[key]) {
+        clearTimeout(debounceTimers.current[key]);
+        delete debounceTimers.current[key];
+      }
+      routuneClient
+        .setEqBand({
+          channel: selectedChannel,
+          bandIndex: i,
+          gainDb: 0.0,
+        })
+        .response.catch((err) => {
+          console.warn(`Failed to reset EQ band ${i}:`, err);
+        });
+    }
+  }, [resetChannelEq, selectedChannel]);
+
+  return (
+    <div className="flex flex-col rounded-xl border border-neutral-800 bg-neutral-900/40 p-5 shadow-sm">
+      {/* Header & Channel Selector */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-neutral-800/80 pb-4">
+        <div className="flex items-center gap-3">
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-900 text-emerald-400">
+            <Activity className="h-5 w-5" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-semibold tracking-wide text-neutral-100">
+                DSP Tuning Pipeline
+              </h2>
+              <span className="rounded bg-neutral-800 px-1.5 py-0.5 font-mono text-[10px] text-neutral-400">
+                10-Band Graphic EQ
+              </span>
+            </div>
+            <p className="text-xs text-neutral-400 mt-0.5">
+              Cascading DirectForm1 Biquad Filters (Q ≈ 1.414, lock-free, zero-alloc)
+            </p>
+          </div>
+        </div>
+
+        {/* Right Action: Reset Flat */}
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          <button
+            onClick={handleResetFlat}
+            disabled={!isConnected}
+            title="Reset all bands to 0 dB"
+            className="flex items-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-900/80 px-3 py-1.5 text-xs font-medium text-neutral-300 transition-colors hover:border-neutral-700 hover:bg-neutral-800 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+            <span>Reset Flat</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Channel Selection Tabs */}
+      <div className="flex items-center gap-2 pt-4 pb-2 overflow-x-auto">
+        <span className="text-xs font-medium text-neutral-400 mr-1 shrink-0">
+          Target Channel:
+        </span>
+        <div className="flex items-center gap-1.5 rounded-lg border border-neutral-800/80 bg-neutral-950/60 p-1 shrink-0">
+          {CHANNEL_TABS.map((tab) => {
+            const Icon = tab.icon;
+            const isSelected = tab.id === selectedChannel;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setSelectedChannel(tab.id)}
+                className={`flex items-center gap-2 rounded-md px-3 py-1.5 text-xs font-medium transition-all cursor-pointer ${
+                  isSelected
+                    ? `${tab.activeBg} ${tab.activeColor} ${tab.activeBorder} border shadow-sm`
+                    : "text-neutral-400 border border-transparent hover:text-neutral-200 hover:bg-neutral-900/80"
+                }`}
+              >
+                <Icon className="h-3.5 w-3.5" />
+                <span>{tab.name}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* EQ Sliders Grid */}
+      <div className="relative mt-4 rounded-lg border border-neutral-800/60 bg-neutral-950/40 p-4">
+        {/* Background zero dB reference line */}
+        <div
+          className="pointer-events-none absolute left-10 right-10 border-b border-dashed border-neutral-800/70"
+          style={{ top: "calc(50% + 2px)" }}
+        />
+
+        <div className="grid grid-cols-10 gap-1 sm:gap-2 text-center">
+          {EQ_BANDS.map((band) => {
+            const gain = channelGains[band.index] ?? 0.0;
+            const isZero = Math.abs(gain) < 0.05;
+            const isPositive = gain > 0.05;
+
+            return (
+              <div
+                key={band.index}
+                className="flex flex-col items-center group select-none"
+              >
+                {/* Gain Readout Badge */}
+                <button
+                  type="button"
+                  onClick={() => dispatchSetEqBand(selectedChannel, band.index, 0.0)}
+                  title="Click to reset to 0.0 dB"
+                  className={`h-5 w-full flex items-center justify-center font-mono text-[11px] rounded transition-colors cursor-pointer ${
+                    isZero
+                      ? "text-neutral-400 group-hover:text-neutral-300"
+                      : isPositive
+                      ? `${activeChannelConfig.activeColor} font-semibold`
+                      : "text-neutral-300 font-semibold"
+                  }`}
+                >
+                  {isPositive ? `+${gain.toFixed(1)}` : gain.toFixed(1)}
+                </button>
+
+                {/* Vertical Range Slider */}
+                <div
+                  className="relative my-2 flex items-center justify-center h-[140px]"
+                  onDoubleClick={() =>
+                    dispatchSetEqBand(selectedChannel, band.index, 0.0)
+                  }
+                >
+                  <input
+                    type="range"
+                    min="-12.0"
+                    max="12.0"
+                    step="0.1"
+                    value={gain}
+                    disabled={!isConnected}
+                    onChange={(e) => {
+                      const val = parseFloat(e.target.value);
+                      dispatchSetEqBand(selectedChannel, band.index, val);
+                    }}
+                    className={`eq-slider-vertical ${activeChannelConfig.thumbClass} disabled:opacity-40 disabled:cursor-not-allowed`}
+                    title={`${band.label}: ${gain.toFixed(1)} dB (double click to reset)`}
+                  />
+                </div>
+
+                {/* Frequency Band Label */}
+                <span className="font-mono text-[10px] tracking-tight text-neutral-400 group-hover:text-neutral-200 transition-colors">
+                  {band.label}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Range Bounds Indicators */}
+        <div className="mt-3 pt-3 border-t border-neutral-800/60 flex items-center justify-between text-[11px] font-mono text-neutral-400">
+          <div className="flex items-center gap-3">
+            <span className="text-neutral-400">Range:</span>
+            <span>-12.0 dB ~ +12.0 dB</span>
+          </div>
+          <div className="flex items-center gap-2 text-neutral-400">
+            <span>Center:</span>
+            <span className="text-neutral-400 font-medium">0.0 dB Flat</span>
+          </div>
+          <div className="text-neutral-400">
+            Double-click slider to reset band
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

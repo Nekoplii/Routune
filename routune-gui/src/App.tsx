@@ -1,9 +1,10 @@
 import { Header } from "./components/Header";
 import { VolumeMeter } from "./components/VolumeMeter";
 import { ChannelRoutingPanels } from "./components/ChannelRoutingPanels";
+import { EqualizerPanel } from "./components/EqualizerPanel";
 import { DaemonStatusCard } from "./components/DaemonStatusCard";
 import { useTelemetryStream } from "./hooks/useTelemetryStream";
-import { Sliders, Activity } from "lucide-react";
+import { Sliders } from "lucide-react";
 
 export function App() {
   // Start gRPC-Web telemetry and heartbeat loop
@@ -24,8 +25,13 @@ export function App() {
           <ChannelRoutingPanels />
         </section>
 
+        {/* DSP Tuning Pipeline (10-Band Parametric EQ) */}
+        <section>
+          <EqualizerPanel />
+        </section>
+
         {/* System & Architecture Grid */}
-        <section className="grid grid-cols-1 md:grid-cols-3 gap-5">
+        <section className="grid grid-cols-1 md:grid-cols-2 gap-5">
           <DaemonStatusCard />
 
           {/* Routing Matrix Card */}
@@ -39,22 +45,7 @@ export function App() {
             </p>
             <div className="mt-auto pt-4 flex items-center justify-between text-xs font-mono text-neutral-500">
               <span>Graph Engine:</span>
-              <span className="text-indigo-400">Phase 2 Target</span>
-            </div>
-          </div>
-
-          {/* DSP Processing Card */}
-          <div className="flex flex-col rounded-xl border border-neutral-800 bg-neutral-900/40 p-5">
-            <div className="flex items-center gap-2 text-emerald-400">
-              <Activity className="h-5 w-5" />
-              <h2 className="text-sm font-medium text-neutral-200">DSP Tuning Pipeline</h2>
-            </div>
-            <p className="mt-2 text-xs text-neutral-400 leading-relaxed">
-              Parametric EQ (<code className="text-neutral-300">biquad</code>) and sample-rate conversion (<code className="text-neutral-300">rubato</code>) operate entirely in daemon user-mode.
-            </p>
-            <div className="mt-auto pt-4 flex items-center justify-between text-xs font-mono text-neutral-500">
-              <span>Filter Precision:</span>
-              <span className="text-emerald-400">32-bit Float</span>
+              <span className="text-indigo-400">Lock-Free Bounded</span>
             </div>
           </div>
         </section>
