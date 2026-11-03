@@ -124,6 +124,36 @@ impl ConfigManager {
         let _ = self.save_tx.try_send(());
     }
 
+    pub async fn set_noise_gate(
+        &self,
+        enabled: bool,
+        threshold_db: f32,
+        attack_ms: f32,
+        release_ms: f32,
+    ) {
+        {
+            let mut guard = self.config.lock().await;
+            guard.set_noise_gate(enabled, threshold_db, attack_ms, release_ms);
+        }
+        let _ = self.save_tx.try_send(());
+    }
+
+    pub async fn set_compressor(
+        &self,
+        enabled: bool,
+        threshold_db: f32,
+        ratio: f32,
+        attack_ms: f32,
+        release_ms: f32,
+        makeup_gain_db: f32,
+    ) {
+        {
+            let mut guard = self.config.lock().await;
+            guard.set_compressor(enabled, threshold_db, ratio, attack_ms, release_ms, makeup_gain_db);
+        }
+        let _ = self.save_tx.try_send(());
+    }
+
     #[allow(dead_code)]
     pub fn path(&self) -> &Path {
         &self.path

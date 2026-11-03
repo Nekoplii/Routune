@@ -76,6 +76,28 @@ pub trait TelemetryMetricsProvider: Send + Sync {
     ) -> Result<(), &'static str> {
         Ok(())
     }
+    fn set_noise_gate(
+        &self,
+        _channel: routune_core::graph::VirtualChannel,
+        _enabled: bool,
+        _threshold_db: f32,
+        _attack_ms: f32,
+        _release_ms: f32,
+    ) -> Result<(), &'static str> {
+        Ok(())
+    }
+    fn set_compressor(
+        &self,
+        _channel: routune_core::graph::VirtualChannel,
+        _enabled: bool,
+        _threshold_db: f32,
+        _ratio: f32,
+        _attack_ms: f32,
+        _release_ms: f32,
+        _makeup_gain_db: f32,
+    ) -> Result<(), &'static str> {
+        Ok(())
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -143,6 +165,30 @@ impl TelemetryMetricsProvider for crate::pipewire_bridge::PipeWireBridgeService 
         muted: bool,
     ) -> Result<(), &'static str> {
         self.update_mute(channel, muted)
+    }
+
+    fn set_noise_gate(
+        &self,
+        channel: routune_core::graph::VirtualChannel,
+        enabled: bool,
+        threshold_db: f32,
+        attack_ms: f32,
+        release_ms: f32,
+    ) -> Result<(), &'static str> {
+        self.set_noise_gate(channel, enabled, threshold_db, attack_ms, release_ms)
+    }
+
+    fn set_compressor(
+        &self,
+        channel: routune_core::graph::VirtualChannel,
+        enabled: bool,
+        threshold_db: f32,
+        ratio: f32,
+        attack_ms: f32,
+        release_ms: f32,
+        makeup_gain_db: f32,
+    ) -> Result<(), &'static str> {
+        self.set_compressor(channel, enabled, threshold_db, ratio, attack_ms, release_ms, makeup_gain_db)
     }
 }
 
@@ -237,6 +283,15 @@ impl proto::routune_control_server::RoutuneControl for ControlServiceImpl {
         Ok(Response::new(proto::DeviceList { devices }))
     }
 
+    async fn get_hardware_inputs(
+        &self,
+        _request: Request<proto::Empty>,
+    ) -> Result<Response<proto::DeviceList>, Status> {
+        let router = self.router.lock().await;
+        let devices = router.get_hardware_inputs();
+        Ok(Response::new(proto::DeviceList { devices }))
+    }
+
     async fn set_channel_routing(
         &self,
         request: Request<proto::RouteRequest>,
@@ -251,6 +306,7 @@ impl proto::routune_control_server::RoutuneControl for ControlServiceImpl {
                         Ok(proto::AudioChannel::Chat) => Some(routune_core::graph::VirtualChannel::Chat),
                         Ok(proto::AudioChannel::Media) => Some(routune_core::graph::VirtualChannel::Media),
                         Ok(proto::AudioChannel::Aux) => Some(routune_core::graph::VirtualChannel::Aux),
+                        Ok(proto::AudioChannel::Mic) => Some(routune_core::graph::VirtualChannel::Mic),
                         _ => None,
                     };
                     if let Some(ch) = v_ch {
@@ -287,6 +343,7 @@ impl proto::routune_control_server::RoutuneControl for ControlServiceImpl {
             Ok(proto::AudioChannel::Chat) => routune_core::graph::VirtualChannel::Chat,
             Ok(proto::AudioChannel::Media) => routune_core::graph::VirtualChannel::Media,
             Ok(proto::AudioChannel::Aux) => routune_core::graph::VirtualChannel::Aux,
+            Ok(proto::AudioChannel::Mic) => routune_core::graph::VirtualChannel::Mic,
             Err(_) => return Err(Status::invalid_argument("Invalid audio channel")),
         };
 
@@ -349,6 +406,7 @@ impl proto::routune_control_server::RoutuneControl for ControlServiceImpl {
             Ok(proto::AudioChannel::Chat) => routune_core::graph::VirtualChannel::Chat,
             Ok(proto::AudioChannel::Media) => routune_core::graph::VirtualChannel::Media,
             Ok(proto::AudioChannel::Aux) => routune_core::graph::VirtualChannel::Aux,
+            Ok(proto::AudioChannel::Mic) => routune_core::graph::VirtualChannel::Mic,
             Err(_) => return Err(Status::invalid_argument("Invalid channel")),
         };
 
@@ -365,6 +423,75 @@ impl proto::routune_control_server::RoutuneControl for ControlServiceImpl {
         Ok(Response::new(proto::Empty {}))
     }
 
+    async fn set_noise_gate(
+        &self,
+        request: Request<proto::NoiseGateRequest>,
+    ) -> Result<Response<proto::Empty>, Status> {
+        let req = request.into_inner();
+        let virtual_channel = match proto::AudioChannel::try_from(req.channel) {
+            Ok(proto::AudioChannel::Mic) => routune_core::graph::VirtualChannel::Mic,
+            Ok(_) => routune_core::graph::VirtualChannel::Mic,
+            Err(_) => return Err(Status::invalid_argument("Invalid channel")),
+        };
+        let cfg = req.config.unwrap_or_default();
+        if let Some(ref provider) = self.provider {
+            if let Err(err) = provider.set_noise_gate(
+                virtual_channel,
+                cfg.enabled,
+                cfg.threshold_db,
+                cfg.attack_ms,
+                cfg.release_ms,
+            ) {
+                return Err(Status::internal(format!("Failed to set noise gate: {err}")));
+            }
+        }
+        if let Some(ref config_manager) = self.config_manager {
+            config_manager
+                .set_noise_gate(cfg.enabled, cfg.threshold_db, cfg.attack_ms, cfg.release_ms)
+                .await;
+        }
+        Ok(Response::new(proto::Empty {}))
+    }
+
+    async fn set_compressor(
+        &self,
+        request: Request<proto::CompressorRequest>,
+    ) -> Result<Response<proto::Empty>, Status> {
+        let req = request.into_inner();
+        let virtual_channel = match proto::AudioChannel::try_from(req.channel) {
+            Ok(proto::AudioChannel::Mic) => routune_core::graph::VirtualChannel::Mic,
+            Ok(_) => routune_core::graph::VirtualChannel::Mic,
+            Err(_) => return Err(Status::invalid_argument("Invalid channel")),
+        };
+        let cfg = req.config.unwrap_or_default();
+        if let Some(ref provider) = self.provider {
+            if let Err(err) = provider.set_compressor(
+                virtual_channel,
+                cfg.enabled,
+                cfg.threshold_db,
+                cfg.ratio,
+                cfg.attack_ms,
+                cfg.release_ms,
+                cfg.makeup_gain_db,
+            ) {
+                return Err(Status::internal(format!("Failed to set compressor: {err}")));
+            }
+        }
+        if let Some(ref config_manager) = self.config_manager {
+            config_manager
+                .set_compressor(
+                    cfg.enabled,
+                    cfg.threshold_db,
+                    cfg.ratio,
+                    cfg.attack_ms,
+                    cfg.release_ms,
+                    cfg.makeup_gain_db,
+                )
+                .await;
+        }
+        Ok(Response::new(proto::Empty {}))
+    }
+
     async fn set_channel_volume(
         &self,
         request: Request<proto::ChannelVolumeRequest>,
@@ -376,6 +503,7 @@ impl proto::routune_control_server::RoutuneControl for ControlServiceImpl {
             Ok(proto::AudioChannel::Chat) => routune_core::graph::VirtualChannel::Chat,
             Ok(proto::AudioChannel::Media) => routune_core::graph::VirtualChannel::Media,
             Ok(proto::AudioChannel::Aux) => routune_core::graph::VirtualChannel::Aux,
+            Ok(proto::AudioChannel::Mic) => routune_core::graph::VirtualChannel::Mic,
             Err(_) => return Err(Status::invalid_argument("Invalid channel")),
         };
 
@@ -405,6 +533,7 @@ impl proto::routune_control_server::RoutuneControl for ControlServiceImpl {
             Ok(proto::AudioChannel::Chat) => routune_core::graph::VirtualChannel::Chat,
             Ok(proto::AudioChannel::Media) => routune_core::graph::VirtualChannel::Media,
             Ok(proto::AudioChannel::Aux) => routune_core::graph::VirtualChannel::Aux,
+            Ok(proto::AudioChannel::Mic) => routune_core::graph::VirtualChannel::Mic,
             Err(_) => return Err(Status::invalid_argument("Invalid channel")),
         };
 
@@ -437,6 +566,7 @@ impl proto::routune_control_server::RoutuneControl for ControlServiceImpl {
             (proto::AudioChannel::Chat, routune_core::graph::VirtualChannel::Chat),
             (proto::AudioChannel::Media, routune_core::graph::VirtualChannel::Media),
             (proto::AudioChannel::Aux, routune_core::graph::VirtualChannel::Aux),
+            (proto::AudioChannel::Mic, routune_core::graph::VirtualChannel::Mic),
         ];
 
         let mut channel_states = Vec::new();
@@ -447,6 +577,29 @@ impl proto::routune_control_server::RoutuneControl for ControlServiceImpl {
             let volume_db = cfg.get_volume(core_ch);
             let muted = cfg.get_mute(core_ch);
 
+            let (noise_gate, compressor) = if core_ch == routune_core::graph::VirtualChannel::Mic {
+                let g = cfg.get_noise_gate();
+                let c = cfg.get_compressor();
+                (
+                    Some(proto::NoiseGateConfig {
+                        enabled: g.enabled,
+                        threshold_db: g.threshold_db,
+                        attack_ms: g.attack_ms,
+                        release_ms: g.release_ms,
+                    }),
+                    Some(proto::CompressorConfig {
+                        enabled: c.enabled,
+                        threshold_db: c.threshold_db,
+                        ratio: c.ratio,
+                        attack_ms: c.attack_ms,
+                        release_ms: c.release_ms,
+                        makeup_gain_db: c.makeup_gain_db,
+                    }),
+                )
+            } else {
+                (None, None)
+            };
+
             channel_states.push(proto::ChannelConfigState {
                 channel: proto_ch as i32,
                 volume_db,
@@ -454,11 +607,36 @@ impl proto::routune_control_server::RoutuneControl for ControlServiceImpl {
                 route_device: route,
                 eq_bands,
                 noise_cancellation,
+                noise_gate,
+                compressor,
             });
         }
 
         Ok(Response::new(proto::DaemonConfigResponse {
             channels: channel_states,
+        }))
+    }
+
+    async fn set_mic_test(
+        &self,
+        request: Request<proto::MicTestRequest>,
+    ) -> Result<Response<proto::MicTestResponse>, Status> {
+        let req = request.into_inner();
+        let router = self.router.lock().await;
+        router.set_mic_test(req.enabled);
+        Ok(Response::new(proto::MicTestResponse {
+            enabled: req.enabled,
+        }))
+    }
+
+    async fn get_mic_test(
+        &self,
+        _request: Request<proto::Empty>,
+    ) -> Result<Response<proto::MicTestResponse>, Status> {
+        let router = self.router.lock().await;
+        let enabled = router.is_mic_test_enabled();
+        Ok(Response::new(proto::MicTestResponse {
+            enabled,
         }))
     }
 }
@@ -565,6 +743,13 @@ pub async fn run_telemetry_dispatcher(
                 proto::ChannelVolumeMetric {
                     channel: proto::AudioChannel::Aux as i32,
                     channel_name: "Aux".to_string(),
+                    peak_volume_db: -100.0,
+                    rms_volume_db: -100.0,
+                    ai_noise_enabled: false,
+                },
+                proto::ChannelVolumeMetric {
+                    channel: proto::AudioChannel::Mic as i32,
+                    channel_name: "Mic".to_string(),
                     peak_volume_db: -100.0,
                     rms_volume_db: -100.0,
                     ai_noise_enabled: false,
@@ -1100,12 +1285,180 @@ mod tests {
         let config_res = service.get_daemon_config(tonic::Request::new(proto::Empty {})).await;
         assert!(config_res.is_ok());
         let channels = config_res.unwrap().into_inner().channels;
-        assert_eq!(channels.len(), 5);
+        assert_eq!(channels.len(), 6);
         let game_ch = channels.iter().find(|c| c.channel == proto::AudioChannel::Game as i32).unwrap();
         assert!((game_ch.volume_db - (-6.0)).abs() < 0.001);
         assert!(game_ch.muted);
 
         let _ = std::fs::remove_file(&cfg_path);
         let _ = std::fs::remove_dir(&temp_dir);
+    }
+
+    #[tokio::test]
+    async fn test_mic_dynamics_rpc_and_persistence() {
+        use proto::routune_control_server::RoutuneControl;
+        use std::time::Duration;
+
+        let temp_dir = std::env::temp_dir().join("routune_dynamics_persist_test");
+        let cfg_path = temp_dir.join("config.json");
+        let _ = std::fs::remove_file(&cfg_path);
+
+        let cfg_mgr = Arc::new(crate::config::ConfigManager::with_path(cfg_path.clone()).unwrap());
+
+        let is_active = Arc::new(AtomicBool::new(false));
+        let (tx, _) = broadcast::channel(16);
+        let (router, _) = crate::audio::ChannelRouter::new();
+        let router = Arc::new(tokio::sync::Mutex::new(router));
+
+        struct MockDynamicsProvider {
+            last_gate: std::sync::Mutex<Option<(bool, f32, f32, f32)>>,
+            last_comp: std::sync::Mutex<Option<(bool, f32, f32, f32, f32, f32)>>,
+        }
+
+        impl TelemetryMetricsProvider for MockDynamicsProvider {
+            fn get_sink_metrics(&self) -> Vec<proto::SinkMetric> { vec![] }
+            fn get_topology(&self) -> Option<proto::GraphTopology> { None }
+            fn get_master_metrics(&self) -> Option<(f32, f32)> { None }
+            fn get_channel_metrics(&self) -> Vec<proto::ChannelVolumeMetric> { vec![] }
+            fn is_active(&self) -> bool { true }
+            fn set_noise_gate(
+                &self,
+                _channel: routune_core::graph::VirtualChannel,
+                enabled: bool,
+                threshold_db: f32,
+                attack_ms: f32,
+                release_ms: f32,
+            ) -> Result<(), &'static str> {
+                *self.last_gate.lock().unwrap() = Some((enabled, threshold_db, attack_ms, release_ms));
+                Ok(())
+            }
+            fn set_compressor(
+                &self,
+                _channel: routune_core::graph::VirtualChannel,
+                enabled: bool,
+                threshold_db: f32,
+                ratio: f32,
+                attack_ms: f32,
+                release_ms: f32,
+                makeup_gain_db: f32,
+            ) -> Result<(), &'static str> {
+                *self.last_comp.lock().unwrap() = Some((enabled, threshold_db, ratio, attack_ms, release_ms, makeup_gain_db));
+                Ok(())
+            }
+        }
+
+        let mock_provider = Arc::new(MockDynamicsProvider {
+            last_gate: std::sync::Mutex::new(None),
+            last_comp: std::sync::Mutex::new(None),
+        });
+
+        let service = ControlServiceImpl::new_with_config(
+            is_active,
+            tx,
+            Some(mock_provider.clone()),
+            router,
+            Some(cfg_mgr.clone()),
+        );
+
+        // 1. Test SetNoiseGate
+        let gate_req = tonic::Request::new(proto::NoiseGateRequest {
+            channel: proto::AudioChannel::Mic as i32,
+            config: Some(proto::NoiseGateConfig {
+                enabled: true,
+                threshold_db: -35.0,
+                attack_ms: 8.0,
+                release_ms: 120.0,
+            }),
+        });
+        let res = service.set_noise_gate(gate_req).await;
+        assert!(res.is_ok());
+
+        let (gate_en, gthresh, gatt, grel) = mock_provider.last_gate.lock().unwrap().take().unwrap();
+        assert!(gate_en);
+        assert!((gthresh - (-35.0)).abs() < 0.001);
+        assert!((gatt - 8.0).abs() < 0.001);
+        assert!((grel - 120.0).abs() < 0.001);
+
+        // 2. Test SetCompressor
+        let comp_req = tonic::Request::new(proto::CompressorRequest {
+            channel: proto::AudioChannel::Mic as i32,
+            config: Some(proto::CompressorConfig {
+                enabled: true,
+                threshold_db: -16.0,
+                ratio: 3.5,
+                attack_ms: 15.0,
+                release_ms: 150.0,
+                makeup_gain_db: 3.0,
+            }),
+        });
+        let res = service.set_compressor(comp_req).await;
+        assert!(res.is_ok());
+
+        let (cen, cthresh, crat, catt, crel, cmake) = mock_provider.last_comp.lock().unwrap().take().unwrap();
+        assert!(cen);
+        assert!((cthresh - (-16.0)).abs() < 0.001);
+        assert!((crat - 3.5).abs() < 0.001);
+        assert!((catt - 15.0).abs() < 0.001);
+        assert!((crel - 150.0).abs() < 0.001);
+        assert!((cmake - 3.0).abs() < 0.001);
+
+        // 3. Test persistence
+        tokio::time::sleep(Duration::from_millis(250)).await;
+        let saved_cfg = routune_core::config::RoutuneConfig::load_or_default(&cfg_path);
+        let g = saved_cfg.get_noise_gate();
+        assert!(g.enabled);
+        assert!((g.threshold_db - (-35.0)).abs() < 0.001);
+        let c = saved_cfg.get_compressor();
+        assert!(c.enabled);
+        assert!((c.ratio - 3.5).abs() < 0.001);
+
+        // 4. Test GetDaemonConfig returns dynamics for mic
+        let config_res = service.get_daemon_config(tonic::Request::new(proto::Empty {})).await.unwrap().into_inner();
+        let mic_ch = config_res.channels.into_iter().find(|c| c.channel == proto::AudioChannel::Mic as i32).unwrap();
+        assert!(mic_ch.noise_gate.is_some());
+        assert!(mic_ch.noise_gate.unwrap().enabled);
+        assert!(mic_ch.compressor.is_some());
+        assert!(mic_ch.compressor.unwrap().enabled);
+
+        let _ = std::fs::remove_file(&cfg_path);
+        let _ = std::fs::remove_dir(&temp_dir);
+    }
+
+    #[tokio::test]
+    async fn test_mic_test_rpc() {
+        use proto::routune_control_server::RoutuneControl;
+
+        let is_active = Arc::new(AtomicBool::new(false));
+        let (tx, _) = broadcast::channel(16);
+        let (router, _) = crate::audio::ChannelRouter::new();
+        let router = Arc::new(tokio::sync::Mutex::new(router));
+
+        let service = ControlServiceImpl::new(is_active, tx, None, router.clone());
+
+        // Initial state is false
+        let get_res = service.get_mic_test(tonic::Request::new(proto::Empty {})).await.unwrap().into_inner();
+        assert!(!get_res.enabled);
+
+        // Enable mic test
+        let set_res = service
+            .set_mic_test(tonic::Request::new(proto::MicTestRequest { enabled: true }))
+            .await
+            .unwrap()
+            .into_inner();
+        assert!(set_res.enabled);
+
+        let get_res = service.get_mic_test(tonic::Request::new(proto::Empty {})).await.unwrap().into_inner();
+        assert!(get_res.enabled);
+
+        // Disable mic test
+        let set_res = service
+            .set_mic_test(tonic::Request::new(proto::MicTestRequest { enabled: false }))
+            .await
+            .unwrap()
+            .into_inner();
+        assert!(!set_res.enabled);
+
+        let get_res = service.get_mic_test(tonic::Request::new(proto::Empty {})).await.unwrap().into_inner();
+        assert!(!get_res.enabled);
     }
 }
