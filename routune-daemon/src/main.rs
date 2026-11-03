@@ -30,12 +30,19 @@ async fn main() -> Result<()> {
     let (mut channel_router, pusher) = audio::ChannelRouter::new();
     let is_active = Arc::new(AtomicBool::new(false));
 
+    // 2b. Initialize native virtual mic pipeline (native PipeWire source, CPAL DSP output stream, auto-link)
+    #[cfg(target_os = "linux")]
+    if let Err(e) = channel_router.init_virtual_mic_pipeline() {
+        warn!("Failed to initialize virtual mic pipeline: {e}");
+    }
+
     // 3. Map physical hardware outputs from persistent configuration
     let routes = [
         (server::proto::AudioChannel::Game as i32, initial_config.get_route(VirtualChannel::Game)),
         (server::proto::AudioChannel::Chat as i32, initial_config.get_route(VirtualChannel::Chat)),
         (server::proto::AudioChannel::Media as i32, initial_config.get_route(VirtualChannel::Media)),
         (server::proto::AudioChannel::Aux as i32, initial_config.get_route(VirtualChannel::Aux)),
+        (server::proto::AudioChannel::Mic as i32, initial_config.get_route(VirtualChannel::Mic)),
     ];
     for (ch, target) in routes {
         if !target.is_empty() && !target.eq_ignore_ascii_case("none") && !target.eq_ignore_ascii_case("unassigned") {
@@ -56,6 +63,24 @@ async fn main() -> Result<()> {
         Ok(service) => {
             info!("PipeWire virtual audio bridge running with 4 virtual sinks ('routune-game', 'routune-chat', 'routune-media', 'routune-aux')");
             let arc_service = Arc::new(service);
+            let g = initial_config.get_noise_gate();
+            let _ = arc_service.set_noise_gate(
+                VirtualChannel::Mic,
+                g.enabled,
+                g.threshold_db,
+                g.attack_ms,
+                g.release_ms,
+            );
+            let c = initial_config.get_compressor();
+            let _ = arc_service.set_compressor(
+                VirtualChannel::Mic,
+                c.enabled,
+                c.threshold_db,
+                c.ratio,
+                c.attack_ms,
+                c.release_ms,
+                c.makeup_gain_db,
+            );
             (Some(arc_service.clone()), Some(arc_service as Arc<dyn TelemetryMetricsProvider>))
         }
         Err(err) => {

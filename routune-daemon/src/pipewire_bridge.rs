@@ -13,7 +13,7 @@ use routune_core::graph::{
     GraphController, PhysicalOutputNode, ResamplerNode, VirtualChannel, VirtualInputNode,
 };
 
-use crate::audio::ChannelPusher;
+use crate::audio::{AudioRingBuffer, ChannelPusher};
 use crate::server::proto::{
     AudioChannel, ChannelVolumeMetric, GraphEdgeInfo, GraphNodeInfo, GraphTopology, SinkMetric,
 };
@@ -31,6 +31,9 @@ pub struct AppRouteCommand {
 #[derive(Debug, Clone)]
 pub struct DiscoveredApp {
     pub id: u32,
+    pub node_ids: Vec<u32>,
+    #[allow(dead_code)]
+    pub app_key: String,
     pub name: String,
     pub icon_name: String,
     pub target_node: Option<u32>,
@@ -56,6 +59,7 @@ impl DiscoveredApp {
                 "routune-chat" => return (AudioChannel::Chat, "Routune Chat".to_string()),
                 "routune-media" => return (AudioChannel::Media, "Routune Media".to_string()),
                 "routune-aux" => return (AudioChannel::Aux, "Routune Aux".to_string()),
+                "routune-mic" | "routune-mic-source" | "routune-virtual-mic" => return (AudioChannel::Mic, "Routune Mic".to_string()),
                 _ => {}
             }
         }
@@ -67,6 +71,7 @@ impl DiscoveredApp {
                         "routune-chat" => return (AudioChannel::Chat, "Routune Chat".to_string()),
                         "routune-media" => return (AudioChannel::Media, "Routune Media".to_string()),
                         "routune-aux" => return (AudioChannel::Aux, "Routune Aux".to_string()),
+                        "routune-mic" | "routune-mic-source" | "routune-virtual-mic" => return (AudioChannel::Mic, "Routune Mic".to_string()),
                         _ => {}
                     }
                 }
@@ -77,7 +82,7 @@ impl DiscoveredApp {
 }
 
 struct VirtualSinkUserData {
-    pusher: Arc<std::sync::Mutex<Option<rtrb::Producer<f32>>>>,
+    ring_buf: Arc<AudioRingBuffer>,
     peak_db: Arc<AtomicU32>,
     rms_db: Arc<AtomicU32>,
     is_active: Arc<AtomicBool>,
@@ -103,13 +108,14 @@ pub struct PipeWireBridgeService {
     thread_handle: Option<JoinHandle<()>>,
     shutdown_sender: pw::channel::Sender<BridgeShutdown>,
     route_app_tx: pw::channel::Sender<AppRouteCommand>,
-    discovered_apps: Arc<std::sync::Mutex<std::collections::HashMap<u32, DiscoveredApp>>>,
+    discovered_apps: Arc<std::sync::Mutex<std::collections::HashMap<String, DiscoveredApp>>>,
     virtual_sinks: Arc<std::sync::Mutex<std::collections::HashMap<String, u32>>>,
     graph_controller: Arc<std::sync::Mutex<GraphController>>,
     game_eq_tx: crossbeam_channel::Sender<GraphCommand>,
     chat_eq_tx: crossbeam_channel::Sender<GraphCommand>,
     media_eq_tx: crossbeam_channel::Sender<GraphCommand>,
     aux_eq_tx: crossbeam_channel::Sender<GraphCommand>,
+    mic_cmd_tx: crossbeam_channel::Sender<GraphCommand>,
     pub is_active: Arc<AtomicBool>,
     pub game_peak: Arc<AtomicU32>,
     pub game_rms: Arc<AtomicU32>,
@@ -119,12 +125,15 @@ pub struct PipeWireBridgeService {
     pub media_rms: Arc<AtomicU32>,
     pub aux_peak: Arc<AtomicU32>,
     pub aux_rms: Arc<AtomicU32>,
+    pub mic_peak: Arc<AtomicU32>,
+    pub mic_rms: Arc<AtomicU32>,
     pub desktop_peak: Arc<AtomicU32>,
     pub desktop_rms: Arc<AtomicU32>,
     pub game_noise_enabled: Arc<AtomicBool>,
     pub chat_noise_enabled: Arc<AtomicBool>,
     pub media_noise_enabled: Arc<AtomicBool>,
     pub aux_noise_enabled: Arc<AtomicBool>,
+    pub mic_noise_enabled: Arc<AtomicBool>,
 }
 
 impl PipeWireBridgeService {
@@ -161,18 +170,27 @@ impl PipeWireBridgeService {
         let chat_noise_enabled = Arc::new(AtomicBool::new(config.map(|c| c.get_noise_cancellation(VirtualChannel::Chat)).unwrap_or(false)));
         let media_noise_enabled = Arc::new(AtomicBool::new(config.map(|c| c.get_noise_cancellation(VirtualChannel::Media)).unwrap_or(false)));
         let aux_noise_enabled = Arc::new(AtomicBool::new(config.map(|c| c.get_noise_cancellation(VirtualChannel::Aux)).unwrap_or(false)));
+        let mic_noise_enabled = pusher.mic_noise_enabled.clone();
+        if let Some(cfg) = config {
+            mic_noise_enabled.store(cfg.get_noise_cancellation(VirtualChannel::Mic), Ordering::Relaxed);
+        }
+
+        let mic_cmd_tx = pusher.mic_cmd_tx.clone();
+        let mic_peak = pusher.mic_peak.clone();
+        let mic_rms = pusher.mic_rms.clone();
 
         let (game_eq_tx, game_eq_rx) = crossbeam_channel::bounded(64);
         let (chat_eq_tx, chat_eq_rx) = crossbeam_channel::bounded(64);
         let (media_eq_tx, media_eq_rx) = crossbeam_channel::bounded(64);
         let (aux_eq_tx, aux_eq_rx) = crossbeam_channel::bounded(64);
 
-        // Setup default graph: 4 independent channel chains -> channel-specific PhysicalOutputNode
+        // Setup default graph: independent channel chains -> channel-specific PhysicalOutputNode
         let channels = [
             ("routune-game", "Routune Game", "game-noise", "Game AI Noise", "game-eq", "Game Equalizer", "game-resampler", "Game Resampler", "game-bypass", "Game DSP Bypass", "game-output", "Game Output", VirtualChannel::Game),
             ("routune-chat", "Routune Chat", "chat-noise", "Chat AI Noise", "chat-eq", "Chat Equalizer", "chat-resampler", "Chat Resampler", "chat-bypass", "Chat DSP Bypass", "chat-output", "Chat Output", VirtualChannel::Chat),
             ("routune-media", "Routune Media", "media-noise", "Media AI Noise", "media-eq", "Media Equalizer", "media-resampler", "Media Resampler", "media-bypass", "Media DSP Bypass", "media-output", "Media Output", VirtualChannel::Media),
             ("routune-aux", "Routune Aux", "aux-noise", "Aux AI Noise", "aux-eq", "Aux Equalizer", "aux-resampler", "Aux Resampler", "aux-bypass", "Aux DSP Bypass", "aux-output", "Aux Output", VirtualChannel::Aux),
+            ("routune-mic", "Routune Mic", "mic-noise", "Mic AI Noise", "mic-eq", "Mic Equalizer", "mic-resampler", "Mic Resampler", "mic-bypass", "Mic DSP Bypass", "mic-output", "Mic Output", VirtualChannel::Mic),
         ];
 
         for (in_id, in_name, noise_id, noise_name, eq_id, eq_name, resamp_id, resamp_name, bypass_id, bypass_name, out_id, out_name, v_ch) in channels {
@@ -212,7 +230,7 @@ impl PipeWireBridgeService {
         let (shutdown_sender, shutdown_receiver) = pw::channel::channel::<BridgeShutdown>();
         let (route_app_tx, route_app_rx) = pw::channel::channel::<AppRouteCommand>();
 
-        let discovered_apps: Arc<std::sync::Mutex<std::collections::HashMap<u32, DiscoveredApp>>> =
+        let discovered_apps: Arc<std::sync::Mutex<std::collections::HashMap<String, DiscoveredApp>>> =
             Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
         let virtual_sinks: Arc<std::sync::Mutex<std::collections::HashMap<String, u32>>> =
             Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
@@ -220,10 +238,10 @@ impl PipeWireBridgeService {
         // Rendezvous channel to wait for thread startup outcome
         let (init_tx, init_rx) = std::sync::mpsc::sync_channel::<anyhow::Result<()>>(0);
 
-        let t_game_pusher = pusher.game.clone();
-        let t_chat_pusher = pusher.chat.clone();
-        let t_media_pusher = pusher.media.clone();
-        let t_aux_pusher = pusher.aux.clone();
+        let t_game_ring = pusher.game.clone();
+        let t_chat_ring = pusher.chat.clone();
+        let t_media_ring = pusher.media.clone();
+        let t_aux_ring = pusher.aux.clone();
 
         let t_game_peak = game_peak.clone();
         let t_game_rms = game_rms.clone();
@@ -315,11 +333,14 @@ impl PipeWireBridgeService {
                                                     if let Some(key) = key {
                                                         if key == "target.node" || key == "target.object" {
                                                             if let Ok(mut apps) = prop_apps.lock() {
-                                                                if let Some(app) = apps.get_mut(&subject) {
-                                                                    if key == "target.node" {
-                                                                        app.target_node = value.and_then(|v| v.parse::<u32>().ok());
-                                                                    } else if key == "target.object" {
-                                                                        app.target_object = value.map(|v| v.to_string());
+                                                                for app in apps.values_mut() {
+                                                                    if app.id == subject || app.node_ids.contains(&subject) {
+                                                                        if key == "target.node" {
+                                                                            app.target_node = value.and_then(|v| v.parse::<u32>().ok());
+                                                                        } else if key == "target.object" {
+                                                                            app.target_object = value.map(|v| v.to_string());
+                                                                        }
+                                                                        break;
                                                                     }
                                                                 }
                                                             }
@@ -337,11 +358,27 @@ impl PipeWireBridgeService {
                                     }
                                 }
                             }
+                        } else if global.type_ == pw::types::ObjectType::Device {
+                            if let Some(props) = &global.props {
+                                let dict = props.as_ref();
+                                let desc = dict.get("device.description")
+                                    .or_else(|| dict.get("device.nick"))
+                                    .unwrap_or("");
+                                if !desc.is_empty() {
+                                    if let Some(path) = dict.get("object.path") {
+                                        let card_id = path.strip_prefix("alsa:acp:").unwrap_or(path);
+                                        crate::audio::register_pipewire_device_description(card_id, desc);
+                                    }
+                                    if let Some(name) = dict.get("device.name") {
+                                        crate::audio::register_pipewire_device_description(name, desc);
+                                    }
+                                }
+                            }
                         } else if global.type_ == pw::types::ObjectType::Node {
                             if let Some(props) = &global.props {
                                 let dict = props.as_ref();
                                 let node_name = dict.get("node.name").unwrap_or("");
-                                if node_name == "routune-game" || node_name == "routune-chat" || node_name == "routune-media" || node_name == "routune-aux" {
+                                if node_name == "routune-game" || node_name == "routune-chat" || node_name == "routune-media" || node_name == "routune-aux" || node_name == "routune-mic" || node_name == "routune-mic-source" || node_name == "routune-virtual-mic" {
                                     if let Ok(mut sinks) = t_sinks_reg.lock() {
                                         sinks.insert(node_name.to_string(), global.id);
                                     }
@@ -355,9 +392,21 @@ impl PipeWireBridgeService {
                                         .or_else(|| dict.get("node.name"))
                                         .unwrap_or("Unknown App");
 
+                                    let binary = dict.get("application.process.binary");
+                                    let pid = dict.get("application.process.id");
+                                    let app_key = if let (Some(b), Some(p)) = (binary, pid) {
+                                        format!("{b}:{p}")
+                                    } else if let Some(b) = binary {
+                                        b.to_string()
+                                    } else if let Some(p) = pid {
+                                        format!("{app_name}:{p}")
+                                    } else {
+                                        app_name.to_string()
+                                    };
+
                                     if !node_name.starts_with("routune-") && !app_name.starts_with("routune-") {
                                         let icon_name = dict.get("application.icon-name")
-                                            .or_else(|| dict.get("application.process.binary"))
+                                            .or_else(|| binary)
                                             .unwrap_or("")
                                             .to_string();
 
@@ -365,13 +414,37 @@ impl PipeWireBridgeService {
                                         let target_node = dict.get("target.node").and_then(|s| s.parse::<u32>().ok());
 
                                         if let Ok(mut apps) = t_apps_reg.lock() {
-                                            apps.insert(global.id, DiscoveredApp {
-                                                id: global.id,
-                                                name: app_name.to_string(),
-                                                icon_name,
-                                                target_node,
-                                                target_object: target_obj,
-                                            });
+                                            if let Some(existing) = apps.get_mut(&app_key) {
+                                                if !existing.node_ids.contains(&global.id) {
+                                                    existing.node_ids.push(global.id);
+                                                }
+                                                // Sync new stream node to existing routing if already routed
+                                                if let Some(ref obj) = existing.target_object {
+                                                    let obj_clone = obj.clone();
+                                                    let t_node = existing.target_node;
+                                                    let nid = global.id;
+                                                    std::thread::spawn(move || {
+                                                        if let Some(tn) = t_node {
+                                                            let _ = std::process::Command::new("pw-metadata")
+                                                                .args([&nid.to_string(), "target.node", &tn.to_string(), "Spa:Id"])
+                                                                .output();
+                                                        }
+                                                        let _ = std::process::Command::new("pw-metadata")
+                                                            .args([&nid.to_string(), "target.object", &obj_clone])
+                                                            .output();
+                                                    });
+                                                }
+                                            } else {
+                                                apps.insert(app_key.clone(), DiscoveredApp {
+                                                    id: global.id,
+                                                    node_ids: vec![global.id],
+                                                    app_key,
+                                                    name: app_name.to_string(),
+                                                    icon_name,
+                                                    target_node,
+                                                    target_object: target_obj,
+                                                });
+                                            }
                                         }
                                     }
                                 }
@@ -383,7 +456,15 @@ impl PipeWireBridgeService {
                         let t_sinks_rem = t_virtual_sinks.clone();
                         move |id| {
                             if let Ok(mut apps) = t_apps_rem.lock() {
-                                apps.remove(&id);
+                                apps.retain(|_, app| {
+                                    app.node_ids.retain(|&nid| nid != id);
+                                    if app.id == id {
+                                        if let Some(&first) = app.node_ids.first() {
+                                            app.id = first;
+                                        }
+                                    }
+                                    !app.node_ids.is_empty()
+                                });
                             }
                             if let Ok(mut sinks) = t_sinks_rem.lock() {
                                 sinks.retain(|_, v| *v != id);
@@ -400,6 +481,7 @@ impl PipeWireBridgeService {
                         AudioChannel::Chat => "routune-chat",
                         AudioChannel::Media => "routune-media",
                         AudioChannel::Aux => "routune-aux",
+                        AudioChannel::Mic => "routune-virtual-mic",
                         AudioChannel::Master => "routune-game",
                     };
                     let target_id = t_sinks_cmd.lock().ok().and_then(|s| s.get(target_sink_name).copied());
@@ -429,6 +511,7 @@ impl PipeWireBridgeService {
                     *pw::keys::NODE_NAME => "routune-game",
                     *pw::keys::NODE_DESCRIPTION => "Routune Game",
                     *pw::keys::AUDIO_CHANNELS => "2",
+                    "audio.position" => "[ FL FR ]",
                 };
                 let game_stream = match pw::stream::StreamBox::new(&core, "routune-game", game_props) {
                     Ok(s) => s,
@@ -446,6 +529,7 @@ impl PipeWireBridgeService {
                     *pw::keys::NODE_NAME => "routune-chat",
                     *pw::keys::NODE_DESCRIPTION => "Routune Chat",
                     *pw::keys::AUDIO_CHANNELS => "2",
+                    "audio.position" => "[ FL FR ]",
                 };
                 let chat_stream = match pw::stream::StreamBox::new(&core, "routune-chat", chat_props) {
                     Ok(s) => s,
@@ -463,6 +547,7 @@ impl PipeWireBridgeService {
                     *pw::keys::NODE_NAME => "routune-media",
                     *pw::keys::NODE_DESCRIPTION => "Routune Media",
                     *pw::keys::AUDIO_CHANNELS => "2",
+                    "audio.position" => "[ FL FR ]",
                 };
                 let media_stream = match pw::stream::StreamBox::new(&core, "routune-media", media_props) {
                     Ok(s) => s,
@@ -480,6 +565,7 @@ impl PipeWireBridgeService {
                     *pw::keys::NODE_NAME => "routune-aux",
                     *pw::keys::NODE_DESCRIPTION => "Routune Aux",
                     *pw::keys::AUDIO_CHANNELS => "2",
+                    "audio.position" => "[ FL FR ]",
                 };
                 let aux_stream = match pw::stream::StreamBox::new(&core, "routune-aux", aux_props) {
                     Ok(s) => s,
@@ -488,8 +574,6 @@ impl PipeWireBridgeService {
                         return;
                     }
                 };
-
-
 
                 // Desktop Audio Monitor (capturing default physical sink monitor)
                 let monitor_props = pw::properties::properties! {
@@ -500,6 +584,7 @@ impl PipeWireBridgeService {
                     *pw::keys::NODE_NAME => "routune-desktop-monitor",
                     *pw::keys::NODE_DESCRIPTION => "Routune Desktop Audio Monitor",
                     *pw::keys::AUDIO_CHANNELS => "2",
+                    "audio.position" => "[ FL FR ]",
                 };
                 let desktop_monitor_stream = match pw::stream::StreamBox::new(&core, "routune-desktop-monitor", monitor_props) {
                     Ok(s) => s,
@@ -520,7 +605,7 @@ impl PipeWireBridgeService {
 
                 // Helper to attach sink listener
                 macro_rules! register_sink_listener {
-                    ($stream:expr, $pusher:expr, $peak:expr, $rms:expr, $active:expr, $noise_enabled:expr, $eq_rx:expr, $noise_id:expr, $noise_name:expr, $eq_id:expr, $eq_name:expr, $v_ch:expr, $name:expr) => {{
+                    ($stream:expr, $ring_buf:expr, $peak:expr, $rms:expr, $active:expr, $noise_enabled:expr, $eq_rx:expr, $noise_id:expr, $noise_name:expr, $eq_id:expr, $eq_name:expr, $v_ch:expr, $name:expr) => {{
                         let mut ai_noise_node = AiNoiseNode::new($noise_id, $noise_name);
                         let init_noise = thread_config.as_ref().map(|c| c.get_noise_cancellation($v_ch)).unwrap_or(false);
                         ai_noise_node.set_enabled(init_noise);
@@ -541,7 +626,7 @@ impl PipeWireBridgeService {
                         let init_m_muted = thread_config.as_ref().map(|c| c.get_mute(VirtualChannel::Master)).unwrap_or(false);
 
                         let user_data = VirtualSinkUserData {
-                            pusher: $pusher,
+                            ring_buf: $ring_buf,
                             peak_db: $peak,
                             rms_db: $rms,
                             is_active: $active,
@@ -593,7 +678,66 @@ impl PipeWireBridgeService {
 
                                 if let Some(mut buf) = stream.dequeue_buffer() {
                                     let datas = buf.datas_mut();
-                                    if !datas.is_empty() {
+                                    if datas.len() >= 2 {
+                                        // Planar audio: datas[0] = Left, datas[1] = Right
+                                        let (datas_left, datas_right) = datas.split_at_mut(1);
+                                        let chunk_l = datas_left[0].chunk();
+                                        let off_l = chunk_l.offset() as usize;
+                                        let size_l = chunk_l.size() as usize;
+
+                                        let chunk_r = datas_right[0].chunk();
+                                        let off_r = chunk_r.offset() as usize;
+                                        let size_r = chunk_r.size() as usize;
+
+                                        let slice_l = datas_left[0].data();
+                                        let slice_r = datas_right[0].data();
+
+                                        if let (Some(sl_l), Some(sl_r)) = (slice_l, slice_r) {
+                                            if off_l + size_l <= sl_l.len() && off_r + size_r <= sl_r.len() && size_l >= 4 && size_r >= 4 {
+                                                let (prefix_l, f_l, _) = unsafe { sl_l[off_l..off_l + size_l].align_to::<f32>() };
+                                                let (prefix_r, f_r, _) = unsafe { sl_r[off_r..off_r + size_r].align_to::<f32>() };
+
+                                                if prefix_l.is_empty() && prefix_r.is_empty() && !f_l.is_empty() && !f_r.is_empty() {
+                                                    let frames = f_l.len().min(f_r.len()).min(SCRATCH_BUFFER_SAMPLES / 2);
+                                                    for i in 0..frames {
+                                                        data.scratch_buf[i * 2] = f_l[i];
+                                                        data.scratch_buf[i * 2 + 1] = f_r[i];
+                                                    }
+                                                    let len = frames * 2;
+                                                    if len >= 2 {
+                                                        data.ai_noise_node.process(&data.scratch_buf[..len], &mut data.scratch_buf_2[..len]);
+                                                        data.eq_node.process(&data.scratch_buf_2[..len], &mut data.scratch_buf[..len]);
+
+                                                        let effective_gain = if data.muted || data.master_muted {
+                                                            0.0f32
+                                                        } else {
+                                                            data.gain * data.master_gain
+                                                        };
+
+                                                        if effective_gain == 0.0 {
+                                                            data.scratch_buf[..len].fill(0.0);
+                                                        } else if (effective_gain - 1.0).abs() > 0.0001 {
+                                                            for s in &mut data.scratch_buf[..len] {
+                                                                *s = (*s * effective_gain).clamp(-1.0, 1.0);
+                                                            }
+                                                        }
+
+                                                        let processed = &data.scratch_buf[..len];
+
+                                                        let (peak, rms) = calculate_metrics(processed);
+                                                        data.peak_db.store(peak.to_bits(), Ordering::Relaxed);
+                                                        data.rms_db.store(rms.to_bits(), Ordering::Relaxed);
+                                                        if peak > -80.0 {
+                                                            data.is_active.store(true, Ordering::Relaxed);
+                                                        }
+
+                                                        data.ring_buf.push_slice(processed);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    } else if !datas.is_empty() {
+                                        // Interleaved audio: datas[0] = [L0, R0, L1, R1, ...]
                                         let chunk = datas[0].chunk();
                                         let offset = chunk.offset() as usize;
                                         let size = chunk.size() as usize;
@@ -602,41 +746,35 @@ impl PipeWireBridgeService {
                                                 let raw_bytes = &slice[offset..offset + size];
                                                 let (prefix, floats, _) = unsafe { raw_bytes.align_to::<f32>() };
                                                 if prefix.is_empty() && !floats.is_empty() {
-                                                    let len = floats.len().min(SCRATCH_BUFFER_SAMPLES);
-                                                    data.ai_noise_node.process(&floats[..len], &mut data.scratch_buf_2[..len]);
-                                                    data.eq_node.process(&data.scratch_buf_2[..len], &mut data.scratch_buf[..len]);
+                                                    let len = (floats.len().min(SCRATCH_BUFFER_SAMPLES)) & !1;
+                                                    if len >= 2 {
+                                                        data.ai_noise_node.process(&floats[..len], &mut data.scratch_buf_2[..len]);
+                                                        data.eq_node.process(&data.scratch_buf_2[..len], &mut data.scratch_buf[..len]);
 
-                                                    let effective_gain = if data.muted || data.master_muted {
-                                                        0.0f32
-                                                    } else {
-                                                        data.gain * data.master_gain
-                                                    };
+                                                        let effective_gain = if data.muted || data.master_muted {
+                                                            0.0f32
+                                                        } else {
+                                                            data.gain * data.master_gain
+                                                        };
 
-                                                    if effective_gain == 0.0 {
-                                                        for s in &mut data.scratch_buf[..len] {
-                                                            *s = 0.0;
-                                                        }
-                                                    } else if (effective_gain - 1.0).abs() > 0.0001 {
-                                                        for s in &mut data.scratch_buf[..len] {
-                                                            *s = (*s * effective_gain).clamp(-1.0, 1.0);
-                                                        }
-                                                    }
-
-                                                    let processed = &data.scratch_buf[..len];
-
-                                                    let (peak, rms) = calculate_metrics(processed);
-                                                    data.peak_db.store(peak.to_bits(), Ordering::Relaxed);
-                                                    data.rms_db.store(rms.to_bits(), Ordering::Relaxed);
-                                                    if peak > -80.0 {
-                                                        data.is_active.store(true, Ordering::Relaxed);
-                                                    }
-
-                                                    if let Ok(mut guard) = data.pusher.try_lock() {
-                                                        if let Some(prod) = guard.as_mut() {
-                                                            for &sample in processed {
-                                                                let _ = prod.push(sample);
+                                                        if effective_gain == 0.0 {
+                                                            data.scratch_buf[..len].fill(0.0);
+                                                        } else if (effective_gain - 1.0).abs() > 0.0001 {
+                                                            for s in &mut data.scratch_buf[..len] {
+                                                                *s = (*s * effective_gain).clamp(-1.0, 1.0);
                                                             }
                                                         }
+
+                                                        let processed = &data.scratch_buf[..len];
+
+                                                        let (peak, rms) = calculate_metrics(processed);
+                                                        data.peak_db.store(peak.to_bits(), Ordering::Relaxed);
+                                                        data.rms_db.store(rms.to_bits(), Ordering::Relaxed);
+                                                        if peak > -80.0 {
+                                                            data.is_active.store(true, Ordering::Relaxed);
+                                                        }
+
+                                                        data.ring_buf.push_slice(processed);
                                                     }
                                                 }
                                             }
@@ -655,10 +793,10 @@ impl PipeWireBridgeService {
                     }};
                 }
 
-                let _game_listener = register_sink_listener!(game_stream, t_game_pusher, t_game_peak, t_game_rms, t_is_active.clone(), t_game_noise_enabled, t_game_eq_rx, "game-noise", "Game AI Noise", "game-eq", "Game Equalizer", VirtualChannel::Game, "game");
-                let _chat_listener = register_sink_listener!(chat_stream, t_chat_pusher, t_chat_peak, t_chat_rms, t_is_active.clone(), t_chat_noise_enabled, t_chat_eq_rx, "chat-noise", "Chat AI Noise", "chat-eq", "Chat Equalizer", VirtualChannel::Chat, "chat");
-                let _media_listener = register_sink_listener!(media_stream, t_media_pusher, t_media_peak, t_media_rms, t_is_active.clone(), t_media_noise_enabled, t_media_eq_rx, "media-noise", "Media AI Noise", "media-eq", "Media Equalizer", VirtualChannel::Media, "media");
-                let _aux_listener = register_sink_listener!(aux_stream, t_aux_pusher, t_aux_peak, t_aux_rms, t_is_active.clone(), t_aux_noise_enabled, t_aux_eq_rx, "aux-noise", "Aux AI Noise", "aux-eq", "Aux Equalizer", VirtualChannel::Aux, "aux");
+                let _game_listener = register_sink_listener!(game_stream, t_game_ring, t_game_peak, t_game_rms, t_is_active.clone(), t_game_noise_enabled, t_game_eq_rx, "game-noise", "Game AI Noise", "game-eq", "Game Equalizer", VirtualChannel::Game, "game");
+                let _chat_listener = register_sink_listener!(chat_stream, t_chat_ring, t_chat_peak, t_chat_rms, t_is_active.clone(), t_chat_noise_enabled, t_chat_eq_rx, "chat-noise", "Chat AI Noise", "chat-eq", "Chat Equalizer", VirtualChannel::Chat, "chat");
+                let _media_listener = register_sink_listener!(media_stream, t_media_ring, t_media_peak, t_media_rms, t_is_active.clone(), t_media_noise_enabled, t_media_eq_rx, "media-noise", "Media AI Noise", "media-eq", "Media Equalizer", VirtualChannel::Media, "media");
+                let _aux_listener = register_sink_listener!(aux_stream, t_aux_ring, t_aux_peak, t_aux_rms, t_is_active.clone(), t_aux_noise_enabled, t_aux_eq_rx, "aux-noise", "Aux AI Noise", "aux-eq", "Aux Equalizer", VirtualChannel::Aux, "aux");
 
                 let monitor_user_data = DesktopMonitorUserData {
                     desktop_peak: t_desktop_peak,
@@ -783,6 +921,7 @@ impl PipeWireBridgeService {
             chat_eq_tx,
             media_eq_tx,
             aux_eq_tx,
+            mic_cmd_tx,
             is_active,
             game_peak,
             game_rms,
@@ -792,12 +931,15 @@ impl PipeWireBridgeService {
             media_rms,
             aux_peak,
             aux_rms,
+            mic_peak,
+            mic_rms,
             desktop_peak,
             desktop_rms,
             game_noise_enabled,
             chat_noise_enabled,
             media_noise_enabled,
             aux_noise_enabled,
+            mic_noise_enabled,
         })
     }
 
@@ -820,39 +962,51 @@ impl PipeWireBridgeService {
             AudioChannel::Chat => ("routune-chat", "Routune Chat"),
             AudioChannel::Media => ("routune-media", "Routune Media"),
             AudioChannel::Aux => ("routune-aux", "Routune Aux"),
+            AudioChannel::Mic => ("routune-mic", "Routune Mic"),
             AudioChannel::Master => ("routune-game", "Routune Game"),
         };
 
         let target_id = self.virtual_sinks.lock().ok().and_then(|s| s.get(target_sink_name).copied());
 
-        // 1. Immediately update in-memory cache
+        // 1. Immediately update in-memory cache for all associated streams
+        let mut target_node_ids = Vec::new();
         if let Ok(mut apps) = self.discovered_apps.lock() {
-            if let Some(app) = apps.get_mut(&app_id) {
-                app.target_object = Some(target_sink_name.to_string());
-                app.target_node = target_id;
+            for app in apps.values_mut() {
+                if app.id == app_id || app.node_ids.contains(&app_id) {
+                    app.target_object = Some(target_sink_name.to_string());
+                    app.target_node = target_id;
+                    target_node_ids = app.node_ids.clone();
+                    break;
+                }
             }
         }
+        if target_node_ids.is_empty() {
+            target_node_ids.push(app_id);
+        }
 
-        // 2. Dispatch to PipeWire loop
-        let cmd = AppRouteCommand {
-            app_id,
-            target_channel,
-        };
-        let _ = self.route_app_tx.send(cmd);
+        // 2. Dispatch to PipeWire loop for each stream node
+        for &nid in &target_node_ids {
+            let cmd = AppRouteCommand {
+                app_id: nid,
+                target_channel,
+            };
+            let _ = self.route_app_tx.send(cmd);
+        }
 
         // 3. Fallback CLI command execution to guarantee WirePlumber relinking
         let target_id_str = target_id.map(|i| i.to_string());
-        tokio::spawn(async move {
-            if let Some(ref tid) = target_id_str {
-                let _ = tokio::process::Command::new("pw-metadata")
-                    .args([&app_id.to_string(), "target.node", tid, "Spa:Id"])
-                    .output()
-                    .await;
+        let target_sink_str = target_sink_name.to_string();
+        std::thread::spawn(move || {
+            for nid in target_node_ids {
+                if let Some(ref tid) = target_id_str {
+                    let _ = std::process::Command::new("pw-metadata")
+                        .args([&nid.to_string(), "target.node", tid, "Spa:Id"])
+                        .output();
+                }
+                let _ = std::process::Command::new("pw-metadata")
+                    .args([&nid.to_string(), "target.object", &target_sink_str])
+                    .output();
             }
-            let _ = tokio::process::Command::new("pw-metadata")
-                .args([&app_id.to_string(), "target.object", target_sink_name])
-                .output()
-                .await;
         });
 
         info!("Routed application {app_id} to {friendly_name} ({target_sink_name}, target node id {target_id:?})");
@@ -878,6 +1032,9 @@ impl PipeWireBridgeService {
             }
             VirtualChannel::Aux => {
                 let _ = self.aux_eq_tx.try_send(cmd);
+            }
+            VirtualChannel::Mic => {
+                let _ = self.mic_cmd_tx.try_send(cmd);
             }
             VirtualChannel::Master => {
                 let _ = self.game_eq_tx.try_send(GraphCommand::UpdateEq(VirtualChannel::Game, band_index, gain_db));
@@ -913,6 +1070,10 @@ impl PipeWireBridgeService {
                 self.aux_noise_enabled.store(enabled, Ordering::Relaxed);
                 let _ = self.aux_eq_tx.try_send(cmd);
             }
+            VirtualChannel::Mic => {
+                self.mic_noise_enabled.store(enabled, Ordering::Relaxed);
+                let _ = self.mic_cmd_tx.try_send(cmd);
+            }
             VirtualChannel::Master => {
                 self.game_noise_enabled.store(enabled, Ordering::Relaxed);
                 self.chat_noise_enabled.store(enabled, Ordering::Relaxed);
@@ -945,6 +1106,9 @@ impl PipeWireBridgeService {
             VirtualChannel::Aux => {
                 let _ = self.aux_eq_tx.try_send(cmd);
             }
+            VirtualChannel::Mic => {
+                let _ = self.mic_cmd_tx.try_send(cmd);
+            }
             VirtualChannel::Master => {
                 let _ = self.game_eq_tx.try_send(GraphCommand::UpdateVolume(VirtualChannel::Master, volume_db));
                 let _ = self.chat_eq_tx.try_send(GraphCommand::UpdateVolume(VirtualChannel::Master, volume_db));
@@ -973,6 +1137,9 @@ impl PipeWireBridgeService {
             VirtualChannel::Aux => {
                 let _ = self.aux_eq_tx.try_send(cmd);
             }
+            VirtualChannel::Mic => {
+                let _ = self.mic_cmd_tx.try_send(cmd);
+            }
             VirtualChannel::Master => {
                 let _ = self.game_eq_tx.try_send(GraphCommand::UpdateMute(VirtualChannel::Master, muted));
                 let _ = self.chat_eq_tx.try_send(GraphCommand::UpdateMute(VirtualChannel::Master, muted));
@@ -982,6 +1149,66 @@ impl PipeWireBridgeService {
         }
         if let Ok(mut controller) = self.graph_controller.lock() {
             let _ = controller.update_mute(channel, muted);
+        }
+        Ok(())
+    }
+
+    pub fn set_noise_gate(
+        &self,
+        channel: VirtualChannel,
+        enabled: bool,
+        threshold_db: f32,
+        attack_ms: f32,
+        release_ms: f32,
+    ) -> Result<(), &'static str> {
+        let cmd = GraphCommand::UpdateNoiseGate {
+            channel,
+            enabled,
+            threshold_db,
+            attack_ms,
+            release_ms,
+        };
+        if channel == VirtualChannel::Mic {
+            let _ = self.mic_cmd_tx.try_send(cmd);
+        }
+        if let Ok(mut controller) = self.graph_controller.lock() {
+            let _ = controller.set_noise_gate(channel, enabled, threshold_db, attack_ms, release_ms);
+        }
+        Ok(())
+    }
+
+    pub fn set_compressor(
+        &self,
+        channel: VirtualChannel,
+        enabled: bool,
+        threshold_db: f32,
+        ratio: f32,
+        attack_ms: f32,
+        release_ms: f32,
+        makeup_gain_db: f32,
+    ) -> Result<(), &'static str> {
+        let cmd = GraphCommand::UpdateCompressor {
+            channel,
+            enabled,
+            threshold_db,
+            ratio,
+            attack_ms,
+            release_ms,
+            makeup_gain_db,
+        };
+        if channel == VirtualChannel::Mic {
+            let _ = self.mic_cmd_tx.try_send(cmd);
+        }
+        if let Ok(mut controller) = self.graph_controller.lock() {
+            let _ = controller.set_compressor(
+                channel,
+                enabled,
+                threshold_db,
+                ratio,
+                attack_ms,
+                release_ms,
+                makeup_gain_db,
+            );
         }
         Ok(())
     }
@@ -1011,6 +1238,12 @@ impl PipeWireBridgeService {
                 sink_name: "Routune Aux".to_string(),
                 peak_volume_db: f32::from_bits(self.aux_peak.load(Ordering::Relaxed)),
                 rms_volume_db: f32::from_bits(self.aux_rms.load(Ordering::Relaxed)),
+            },
+            SinkMetric {
+                sink_id: "routune-mic".to_string(),
+                sink_name: "Routune Mic".to_string(),
+                peak_volume_db: f32::from_bits(self.mic_peak.load(Ordering::Relaxed)),
+                rms_volume_db: f32::from_bits(self.mic_rms.load(Ordering::Relaxed)),
             },
         ]
     }
@@ -1052,6 +1285,13 @@ impl PipeWireBridgeService {
                 peak_volume_db: Self::read_decay_metric(&self.aux_peak),
                 rms_volume_db: f32::from_bits(self.aux_rms.load(Ordering::Relaxed)),
                 ai_noise_enabled: self.aux_noise_enabled.load(Ordering::Relaxed),
+            },
+            ChannelVolumeMetric {
+                channel: AudioChannel::Mic as i32,
+                channel_name: "Mic".to_string(),
+                peak_volume_db: Self::read_decay_metric(&self.mic_peak),
+                rms_volume_db: f32::from_bits(self.mic_rms.load(Ordering::Relaxed)),
+                ai_noise_enabled: self.mic_noise_enabled.load(Ordering::Relaxed),
             },
         ]
     }
@@ -1160,6 +1400,15 @@ fn create_audio_format_pod(rate: u32, channels: u32) -> Result<Vec<u8>> {
     audio_info.set_rate(rate);
     audio_info.set_channels(channels);
 
+    let mut pos = [spa::sys::SPA_AUDIO_CHANNEL_UNKNOWN; spa::sys::SPA_AUDIO_MAX_CHANNELS as usize];
+    if channels == 1 {
+        pos[0] = spa::sys::SPA_AUDIO_CHANNEL_MONO;
+    } else if channels >= 2 {
+        pos[0] = spa::sys::SPA_AUDIO_CHANNEL_FL;
+        pos[1] = spa::sys::SPA_AUDIO_CHANNEL_FR;
+    }
+    audio_info.set_position(pos);
+
     let obj = spa::pod::Object {
         type_: spa::utils::SpaTypes::ObjectParamFormat.as_raw(),
         id: spa::param::ParamType::EnumFormat.as_raw(),
@@ -1248,23 +1497,25 @@ mod tests {
         match PipeWireBridgeService::start(pusher) {
             Ok(service) => {
                 let metrics = service.get_sink_metrics();
-                assert_eq!(metrics.len(), 4);
+                assert_eq!(metrics.len(), 5);
                 assert_eq!(metrics[0].sink_id, "routune-game");
                 assert_eq!(metrics[1].sink_id, "routune-chat");
                 assert_eq!(metrics[2].sink_id, "routune-media");
                 assert_eq!(metrics[3].sink_id, "routune-aux");
+                assert_eq!(metrics[4].sink_id, "routune-mic");
 
                 let channel_metrics = service.get_channel_metrics();
-                assert_eq!(channel_metrics.len(), 5);
+                assert_eq!(channel_metrics.len(), 6);
                 assert_eq!(channel_metrics[0].channel_name, "Master");
                 assert_eq!(channel_metrics[1].channel_name, "Game");
                 assert_eq!(channel_metrics[2].channel_name, "Chat");
                 assert_eq!(channel_metrics[3].channel_name, "Media");
                 assert_eq!(channel_metrics[4].channel_name, "Aux");
+                assert_eq!(channel_metrics[5].channel_name, "Mic");
 
                 let topology = service.get_topology();
-                assert_eq!(topology.nodes.len(), 24);
-                assert_eq!(topology.edges.len(), 20);
+                assert_eq!(topology.nodes.len(), 30);
+                assert_eq!(topology.edges.len(), 25);
 
                 let eq_res = service.update_eq(VirtualChannel::Game, 3, 5.0);
                 assert!(eq_res.is_ok());
@@ -1292,6 +1543,8 @@ mod tests {
         // 1. Resolve via target_object
         let app1 = DiscoveredApp {
             id: 99,
+            node_ids: vec![99],
+            app_key: "spotify:1234".to_string(),
             name: "Spotify".to_string(),
             icon_name: "spotify-client".to_string(),
             target_node: None,
@@ -1307,6 +1560,8 @@ mod tests {
         // 2. Resolve via target_node
         let app2 = DiscoveredApp {
             id: 101,
+            node_ids: vec![101, 105],
+            app_key: "vesktop:9058".to_string(),
             name: "Discord".to_string(),
             icon_name: "discord".to_string(),
             target_node: Some(84),
@@ -1319,6 +1574,8 @@ mod tests {
         // 3. Fallback default
         let app3 = DiscoveredApp {
             id: 102,
+            node_ids: vec![102],
+            app_key: "game:4444".to_string(),
             name: "GameApp".to_string(),
             icon_name: "".to_string(),
             target_node: None,
