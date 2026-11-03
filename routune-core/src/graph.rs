@@ -86,6 +86,16 @@ pub trait AudioNode: Send {
     fn is_ai_noise_enabled(&self) -> bool {
         false
     }
+    fn set_noise_gate(&mut self, _enabled: bool, _threshold_db: f32, _attack_ms: f32, _release_ms: f32) {}
+    fn set_compressor(
+        &mut self,
+        _enabled: bool,
+        _threshold_db: f32,
+        _ratio: f32,
+        _attack_ms: f32,
+        _release_ms: f32,
+        _makeup_gain_db: f32,
+    ) {}
     fn reset(&mut self) {}
     fn peak_db(&self) -> f32 {
         -100.0
@@ -713,6 +723,7 @@ pub enum VirtualChannel {
     Chat = 2,
     Media = 3,
     Aux = 4,
+    Mic = 5,
 }
 
 pub type Channel = VirtualChannel;
@@ -729,6 +740,22 @@ pub enum GraphCommand {
     ToggleAiNoise(VirtualChannel, bool),
     UpdateVolume(VirtualChannel, f32),
     UpdateMute(VirtualChannel, bool),
+    UpdateNoiseGate {
+        channel: VirtualChannel,
+        enabled: bool,
+        threshold_db: f32,
+        attack_ms: f32,
+        release_ms: f32,
+    },
+    UpdateCompressor {
+        channel: VirtualChannel,
+        enabled: bool,
+        threshold_db: f32,
+        ratio: f32,
+        attack_ms: f32,
+        release_ms: f32,
+        makeup_gain_db: f32,
+    },
 }
 
 pub struct NodeSlot {
@@ -924,6 +951,7 @@ impl Graph {
                         VirtualChannel::Chat => "chat-eq",
                         VirtualChannel::Media => "media-eq",
                         VirtualChannel::Aux => "aux-eq",
+                        VirtualChannel::Mic => "mic-eq",
                     };
                     if let Some(idx) = self.find_slot_by_id(eq_id) {
                         if let Some(slot) = &mut self.slots[idx] {
@@ -938,6 +966,7 @@ impl Graph {
                         VirtualChannel::Chat => "chat-noise",
                         VirtualChannel::Media => "media-noise",
                         VirtualChannel::Aux => "aux-noise",
+                        VirtualChannel::Mic => "mic-noise",
                     };
                     if let Some(idx) = self.find_slot_by_id(noise_id) {
                         if let Some(slot) = &mut self.slots[idx] {
@@ -952,6 +981,7 @@ impl Graph {
                         VirtualChannel::Chat => "chat-output",
                         VirtualChannel::Media => "media-output",
                         VirtualChannel::Aux => "aux-output",
+                        VirtualChannel::Mic => "mic-output",
                     };
                     if let Some(idx) = self.find_slot_by_id(out_id) {
                         if let Some(slot) = &mut self.slots[idx] {
@@ -971,10 +1001,54 @@ impl Graph {
                         VirtualChannel::Chat => "chat-output",
                         VirtualChannel::Media => "media-output",
                         VirtualChannel::Aux => "aux-output",
+                        VirtualChannel::Mic => "mic-output",
                     };
                     if let Some(idx) = self.find_slot_by_id(out_id) {
                         if let Some(slot) = &mut self.slots[idx] {
                             slot.node.set_bypassed(muted);
+                        }
+                    }
+                }
+                GraphCommand::UpdateNoiseGate {
+                    channel,
+                    enabled,
+                    threshold_db,
+                    attack_ms,
+                    release_ms,
+                } => {
+                    let node_id = match channel {
+                        VirtualChannel::Mic => "mic-gate",
+                        _ => "",
+                    };
+                    if let Some(idx) = self.find_slot_by_id(node_id) {
+                        if let Some(slot) = &mut self.slots[idx] {
+                            slot.node.set_noise_gate(enabled, threshold_db, attack_ms, release_ms);
+                        }
+                    }
+                }
+                GraphCommand::UpdateCompressor {
+                    channel,
+                    enabled,
+                    threshold_db,
+                    ratio,
+                    attack_ms,
+                    release_ms,
+                    makeup_gain_db,
+                } => {
+                    let node_id = match channel {
+                        VirtualChannel::Mic => "mic-comp",
+                        _ => "",
+                    };
+                    if let Some(idx) = self.find_slot_by_id(node_id) {
+                        if let Some(slot) = &mut self.slots[idx] {
+                            slot.node.set_compressor(
+                                enabled,
+                                threshold_db,
+                                ratio,
+                                attack_ms,
+                                release_ms,
+                                makeup_gain_db,
+                            );
                         }
                     }
                 }
@@ -1229,6 +1303,7 @@ impl GraphController {
             VirtualChannel::Chat => "chat-noise",
             VirtualChannel::Media => "media-noise",
             VirtualChannel::Aux => "aux-noise",
+            VirtualChannel::Mic => "mic-noise",
         };
         self.cmd_producer
             .try_send(GraphCommand::ToggleAiNoise(channel, enabled))
@@ -1258,6 +1333,60 @@ impl GraphController {
         self.cmd_producer
             .try_send(GraphCommand::UpdateMute(channel, muted))
             .map_err(|_| "Command queue full")?;
+        Ok(())
+    }
+
+    pub fn set_noise_gate(
+        &mut self,
+        channel: VirtualChannel,
+        enabled: bool,
+        threshold_db: f32,
+        attack_ms: f32,
+        release_ms: f32,
+    ) -> Result<(), &'static str> {
+        self.cmd_producer
+            .try_send(GraphCommand::UpdateNoiseGate {
+                channel,
+                enabled,
+                threshold_db,
+                attack_ms,
+                release_ms,
+            })
+            .map_err(|_| "Command queue full")?;
+        if channel == VirtualChannel::Mic {
+            if let Some(info) = self.node_infos.iter_mut().find(|n| n.id == "mic-gate") {
+                info.bypassed = !enabled;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn set_compressor(
+        &mut self,
+        channel: VirtualChannel,
+        enabled: bool,
+        threshold_db: f32,
+        ratio: f32,
+        attack_ms: f32,
+        release_ms: f32,
+        makeup_gain_db: f32,
+    ) -> Result<(), &'static str> {
+        self.cmd_producer
+            .try_send(GraphCommand::UpdateCompressor {
+                channel,
+                enabled,
+                threshold_db,
+                ratio,
+                attack_ms,
+                release_ms,
+                makeup_gain_db,
+            })
+            .map_err(|_| "Command queue full")?;
+        if channel == VirtualChannel::Mic {
+            if let Some(info) = self.node_infos.iter_mut().find(|n| n.id == "mic-comp") {
+                info.bypassed = !enabled;
+            }
+        }
         Ok(())
     }
 

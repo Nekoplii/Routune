@@ -1,8 +1,10 @@
 pub mod ai_noise;
 pub mod config;
+pub mod dynamics;
 pub mod graph;
 
 pub use ai_noise::AiNoiseNode;
+pub use dynamics::{CompressorNode, NoiseGateNode};
 pub use config::{ChannelEqConfig, ChannelNoiseConfig, ChannelRoutingConfig, RoutuneConfig};
 pub use graph::{
     AudioEngineGraph, AudioNode, BypassNode, Channel, DspBypassNode, EqNode, Graph, GraphCommand,

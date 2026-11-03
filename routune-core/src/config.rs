@@ -11,6 +11,12 @@ pub struct ChannelRoutingConfig {
     pub chat: String,
     pub media: String,
     pub aux: String,
+    #[serde(default = "default_route")]
+    pub mic: String,
+}
+
+fn default_route() -> String {
+    "none".to_string()
 }
 
 impl Default for ChannelRoutingConfig {
@@ -20,6 +26,7 @@ impl Default for ChannelRoutingConfig {
             chat: "none".to_string(),
             media: "none".to_string(),
             aux: "none".to_string(),
+            mic: "none".to_string(),
         }
     }
 }
@@ -30,6 +37,12 @@ pub struct ChannelEqConfig {
     pub chat: [f32; EQ_BANDS_COUNT],
     pub media: [f32; EQ_BANDS_COUNT],
     pub aux: [f32; EQ_BANDS_COUNT],
+    #[serde(default = "default_bands")]
+    pub mic: [f32; EQ_BANDS_COUNT],
+}
+
+fn default_bands() -> [f32; EQ_BANDS_COUNT] {
+    [0.0f32; EQ_BANDS_COUNT]
 }
 
 impl Default for ChannelEqConfig {
@@ -39,6 +52,7 @@ impl Default for ChannelEqConfig {
             chat: [0.0f32; EQ_BANDS_COUNT],
             media: [0.0f32; EQ_BANDS_COUNT],
             aux: [0.0f32; EQ_BANDS_COUNT],
+            mic: [0.0f32; EQ_BANDS_COUNT],
         }
     }
 }
@@ -49,6 +63,8 @@ pub struct ChannelNoiseConfig {
     pub chat: bool,
     pub media: bool,
     pub aux: bool,
+    #[serde(default)]
+    pub mic: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -58,6 +74,8 @@ pub struct ChannelVolumeConfig {
     pub chat: f32,
     pub media: f32,
     pub aux: f32,
+    #[serde(default)]
+    pub mic: f32,
 }
 
 impl Default for ChannelVolumeConfig {
@@ -68,6 +86,7 @@ impl Default for ChannelVolumeConfig {
             chat: 0.0,
             media: 0.0,
             aux: 0.0,
+            mic: 0.0,
         }
     }
 }
@@ -79,6 +98,50 @@ pub struct ChannelMuteConfig {
     pub chat: bool,
     pub media: bool,
     pub aux: bool,
+    #[serde(default)]
+    pub mic: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NoiseGateConfig {
+    pub enabled: bool,
+    pub threshold_db: f32,
+    pub attack_ms: f32,
+    pub release_ms: f32,
+}
+
+impl Default for NoiseGateConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            threshold_db: -40.0,
+            attack_ms: 5.0,
+            release_ms: 100.0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CompressorConfig {
+    pub enabled: bool,
+    pub threshold_db: f32,
+    pub ratio: f32,
+    pub attack_ms: f32,
+    pub release_ms: f32,
+    pub makeup_gain_db: f32,
+}
+
+impl Default for CompressorConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            threshold_db: -18.0,
+            ratio: 4.0,
+            attack_ms: 10.0,
+            release_ms: 100.0,
+            makeup_gain_db: 0.0,
+        }
+    }
 }
 
 /// Persistent configuration for Routune daemon state.
@@ -93,6 +156,10 @@ pub struct RoutuneConfig {
     pub volume: ChannelVolumeConfig,
     #[serde(default)]
     pub mute: ChannelMuteConfig,
+    #[serde(default)]
+    pub noise_gate: NoiseGateConfig,
+    #[serde(default)]
+    pub compressor: CompressorConfig,
 }
 
 impl RoutuneConfig {
@@ -106,6 +173,7 @@ impl RoutuneConfig {
             VirtualChannel::Chat => &self.routing.chat,
             VirtualChannel::Media => &self.routing.media,
             VirtualChannel::Aux => &self.routing.aux,
+            VirtualChannel::Mic => &self.routing.mic,
             VirtualChannel::Master => "none",
         }
     }
@@ -117,6 +185,7 @@ impl RoutuneConfig {
             VirtualChannel::Chat => self.routing.chat = val,
             VirtualChannel::Media => self.routing.media = val,
             VirtualChannel::Aux => self.routing.aux = val,
+            VirtualChannel::Mic => self.routing.mic = val,
             VirtualChannel::Master => {}
         }
     }
@@ -127,6 +196,7 @@ impl RoutuneConfig {
             VirtualChannel::Chat => self.eq.chat,
             VirtualChannel::Media => self.eq.media,
             VirtualChannel::Aux => self.eq.aux,
+            VirtualChannel::Mic => self.eq.mic,
             VirtualChannel::Master => [0.0f32; EQ_BANDS_COUNT],
         }
     }
@@ -141,11 +211,13 @@ impl RoutuneConfig {
             VirtualChannel::Chat => self.eq.chat[band_index] = clamped,
             VirtualChannel::Media => self.eq.media[band_index] = clamped,
             VirtualChannel::Aux => self.eq.aux[band_index] = clamped,
+            VirtualChannel::Mic => self.eq.mic[band_index] = clamped,
             VirtualChannel::Master => {
                 self.eq.game[band_index] = clamped;
                 self.eq.chat[band_index] = clamped;
                 self.eq.media[band_index] = clamped;
                 self.eq.aux[band_index] = clamped;
+                self.eq.mic[band_index] = clamped;
             }
         }
     }
@@ -156,11 +228,13 @@ impl RoutuneConfig {
             VirtualChannel::Chat => self.eq.chat = gains,
             VirtualChannel::Media => self.eq.media = gains,
             VirtualChannel::Aux => self.eq.aux = gains,
+            VirtualChannel::Mic => self.eq.mic = gains,
             VirtualChannel::Master => {
                 self.eq.game = gains;
                 self.eq.chat = gains;
                 self.eq.media = gains;
                 self.eq.aux = gains;
+                self.eq.mic = gains;
             }
         }
     }
@@ -171,6 +245,7 @@ impl RoutuneConfig {
             VirtualChannel::Chat => self.noise_cancellation.chat,
             VirtualChannel::Media => self.noise_cancellation.media,
             VirtualChannel::Aux => self.noise_cancellation.aux,
+            VirtualChannel::Mic => self.noise_cancellation.mic,
             VirtualChannel::Master => false,
         }
     }
@@ -181,11 +256,13 @@ impl RoutuneConfig {
             VirtualChannel::Chat => self.noise_cancellation.chat = enabled,
             VirtualChannel::Media => self.noise_cancellation.media = enabled,
             VirtualChannel::Aux => self.noise_cancellation.aux = enabled,
+            VirtualChannel::Mic => self.noise_cancellation.mic = enabled,
             VirtualChannel::Master => {
                 self.noise_cancellation.game = enabled;
                 self.noise_cancellation.chat = enabled;
                 self.noise_cancellation.media = enabled;
                 self.noise_cancellation.aux = enabled;
+                self.noise_cancellation.mic = enabled;
             }
         }
     }
@@ -197,6 +274,7 @@ impl RoutuneConfig {
             VirtualChannel::Chat => self.volume.chat,
             VirtualChannel::Media => self.volume.media,
             VirtualChannel::Aux => self.volume.aux,
+            VirtualChannel::Mic => self.volume.mic,
         }
     }
 
@@ -208,6 +286,7 @@ impl RoutuneConfig {
             VirtualChannel::Chat => self.volume.chat = clamped,
             VirtualChannel::Media => self.volume.media = clamped,
             VirtualChannel::Aux => self.volume.aux = clamped,
+            VirtualChannel::Mic => self.volume.mic = clamped,
         }
     }
 
@@ -218,6 +297,7 @@ impl RoutuneConfig {
             VirtualChannel::Chat => self.mute.chat,
             VirtualChannel::Media => self.mute.media,
             VirtualChannel::Aux => self.mute.aux,
+            VirtualChannel::Mic => self.mute.mic,
         }
     }
 
@@ -228,7 +308,50 @@ impl RoutuneConfig {
             VirtualChannel::Chat => self.mute.chat = muted,
             VirtualChannel::Media => self.mute.media = muted,
             VirtualChannel::Aux => self.mute.aux = muted,
+            VirtualChannel::Mic => self.mute.mic = muted,
         }
+    }
+
+    pub fn get_noise_gate(&self) -> &NoiseGateConfig {
+        &self.noise_gate
+    }
+
+    pub fn set_noise_gate(
+        &mut self,
+        enabled: bool,
+        threshold_db: f32,
+        attack_ms: f32,
+        release_ms: f32,
+    ) {
+        self.noise_gate = NoiseGateConfig {
+            enabled,
+            threshold_db: threshold_db.clamp(-80.0, 0.0),
+            attack_ms: attack_ms.clamp(0.1, 200.0),
+            release_ms: release_ms.clamp(1.0, 2000.0),
+        };
+    }
+
+    pub fn get_compressor(&self) -> &CompressorConfig {
+        &self.compressor
+    }
+
+    pub fn set_compressor(
+        &mut self,
+        enabled: bool,
+        threshold_db: f32,
+        ratio: f32,
+        attack_ms: f32,
+        release_ms: f32,
+        makeup_gain_db: f32,
+    ) {
+        self.compressor = CompressorConfig {
+            enabled,
+            threshold_db: threshold_db.clamp(-60.0, 0.0),
+            ratio: ratio.clamp(1.0, 20.0),
+            attack_ms: attack_ms.clamp(0.1, 500.0),
+            release_ms: release_ms.clamp(1.0, 3000.0),
+            makeup_gain_db: makeup_gain_db.clamp(0.0, 24.0),
+        };
     }
 
     /// Load configuration from a JSON file, or return default template if not found.

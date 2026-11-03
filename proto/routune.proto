@@ -6,14 +6,27 @@ service RoutuneControl {
   rpc Ping (PingRequest) returns (PingResponse);
   rpc StreamTelemetry (TelemetryRequest) returns (stream AudioTelemetry);
   rpc GetHardwareOutputs (Empty) returns (DeviceList);
+  rpc GetHardwareInputs (Empty) returns (DeviceList);
   rpc SetChannelRouting (RouteRequest) returns (RouteResponse);
   rpc SetEqBand (EqRequest) returns (Empty);
   rpc GetActiveApplications (Empty) returns (AppList);
   rpc RouteApplication (AppRouteRequest) returns (Empty);
   rpc ToggleAiNoise (AiNoiseRequest) returns (Empty);
+  rpc SetNoiseGate (NoiseGateRequest) returns (Empty);
+  rpc SetCompressor (CompressorRequest) returns (Empty);
   rpc SetChannelVolume (ChannelVolumeRequest) returns (Empty);
   rpc SetChannelMute (ChannelMuteRequest) returns (Empty);
   rpc GetDaemonConfig (Empty) returns (DaemonConfigResponse);
+  rpc SetMicTest (MicTestRequest) returns (MicTestResponse);
+  rpc GetMicTest (Empty) returns (MicTestResponse);
+}
+
+message MicTestRequest {
+  bool enabled = 1;
+}
+
+message MicTestResponse {
+  bool enabled = 1;
 }
 
 message Empty {}
@@ -54,6 +67,7 @@ enum AudioChannel {
   CHAT = 2;
   MEDIA = 3;
   AUX = 4;
+  MIC = 5;
 }
 
 message PingRequest {
@@ -136,6 +150,32 @@ message AiNoiseRequest {
   bool enabled = 2;
 }
 
+message NoiseGateConfig {
+  bool enabled = 1;
+  float threshold_db = 2;
+  float attack_ms = 3;
+  float release_ms = 4;
+}
+
+message CompressorConfig {
+  bool enabled = 1;
+  float threshold_db = 2;
+  float ratio = 3;
+  float attack_ms = 4;
+  float release_ms = 5;
+  float makeup_gain_db = 6;
+}
+
+message NoiseGateRequest {
+  AudioChannel channel = 1;
+  NoiseGateConfig config = 2;
+}
+
+message CompressorRequest {
+  AudioChannel channel = 1;
+  CompressorConfig config = 2;
+}
+
 message ChannelVolumeRequest {
   AudioChannel channel = 1;
   float volume_db = 2;
@@ -153,6 +193,8 @@ message ChannelConfigState {
   string route_device = 4;
   repeated float eq_bands = 5;
   bool noise_cancellation = 6;
+  NoiseGateConfig noise_gate = 7;
+  CompressorConfig compressor = 8;
 }
 
 message DaemonConfigResponse {
