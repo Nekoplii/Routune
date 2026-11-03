@@ -2,6 +2,7 @@ import { useMemo, useRef } from "react";
 import {
   Gamepad2,
   MessageSquare,
+  Mic,
   Music,
   Radio,
   Volume2,
@@ -17,8 +18,13 @@ interface ChannelConfig {
   icon: typeof Volume2;
 }
 
-// Master card first on the left
+// Mic first on the left, then Master
 const CHANNELS: ChannelConfig[] = [
+  {
+    id: AudioChannel.MIC,
+    name: "Mic",
+    icon: Mic,
+  },
   {
     id: AudioChannel.MASTER,
     name: "Master",
@@ -113,8 +119,8 @@ export function MixerPanel() {
         </button>
       </div>
 
-      {/* 5 Tall Vertical Channel Cards (Master first on left) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+      {/* 6 Tall Vertical Channel Cards (Mic first on left, then Master) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
         {CHANNELS.map((ch) => (
           <ChannelStrip
             key={ch.id}

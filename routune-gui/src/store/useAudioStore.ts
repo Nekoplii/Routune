@@ -6,6 +6,22 @@ import { routuneClient } from "../services/grpcClient";
 export type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
 export type NavigationView = "mixer" | "routing" | "tuning" | "about";
 
+export interface NoiseGateState {
+  enabled: boolean;
+  thresholdDb: number;
+  attackMs: number;
+  releaseMs: number;
+}
+
+export interface CompressorState {
+  enabled: boolean;
+  thresholdDb: number;
+  ratio: number;
+  attackMs: number;
+  releaseMs: number;
+  makeupGainDb: number;
+}
+
 interface AudioStoreState {
   connectionStatus: ConnectionStatus;
   isAudioActive: boolean;
@@ -27,6 +43,7 @@ interface AudioStoreState {
 
   // Hardware routing (Sonar model)
   hardwareOutputs: OutputDeviceInfo[];
+  hardwareInputs: OutputDeviceInfo[];
   channelRoutings: Record<number, string>;
   isRoutingUpdating: Record<number, boolean>;
 
@@ -42,6 +59,14 @@ interface AudioStoreState {
   channelNoiseEnabled: Record<number, boolean>;
   isTogglingAiNoise: Record<number, boolean>;
 
+  // Mic Dynamics: Noise Gate & Compressor
+  noiseGate: NoiseGateState;
+  compressor: CompressorState;
+
+  // Mic Test / Live Monitor
+  micTestEnabled: boolean;
+  isTogglingMicTest: boolean;
+
   // Actions
   setConnectionStatus: (status: ConnectionStatus, error?: string | null) => void;
   setAudioActive: (active: boolean) => void;
@@ -54,14 +79,19 @@ interface AudioStoreState {
   ) => void;
   resetTelemetry: () => void;
   fetchHardwareOutputs: () => Promise<void>;
+  fetchHardwareInputs: () => Promise<void>;
   fetchActiveApps: () => Promise<void>;
   fetchDaemonConfig: () => Promise<void>;
+  fetchMicTest: () => Promise<void>;
+  toggleMicTest: () => Promise<boolean>;
   routeApplication: (appId: number, targetChannel: AudioChannel) => Promise<boolean>;
   setChannelRouting: (channel: AudioChannel, deviceName: string) => Promise<boolean>;
   setSelectedEqChannel: (channel: AudioChannel) => void;
   setEqBandGain: (channel: AudioChannel, bandIndex: number, gainDb: number) => void;
   resetChannelEq: (channel: AudioChannel) => void;
   toggleAiNoise: (channel: AudioChannel, enabled: boolean) => Promise<boolean>;
+  setNoiseGate: (params: Partial<NoiseGateState>) => Promise<boolean>;
+  setCompressor: (params: Partial<CompressorState>) => Promise<boolean>;
   setActiveView: (view: NavigationView) => void;
   setChannelVolume: (channel: AudioChannel, volume: number) => void;
   setChannelFaderDb: (channel: AudioChannel, db: number) => void;
@@ -84,6 +114,16 @@ const DEFAULT_HARDWARE_OUTPUTS: OutputDeviceInfo[] = [
     id: "alsa_output.pci-builtin",
     name: "alsa_output.pci-builtin",
     displayName: "Speakers (Built-in Audio)",
+    channels: 2,
+    sampleRate: 48000,
+  },
+];
+
+const DEFAULT_HARDWARE_INPUTS: OutputDeviceInfo[] = [
+  {
+    id: "sysdefault:CARD=Generic_1",
+    name: "sysdefault:CARD=Generic_1",
+    displayName: "Ryzen HD Audio",
     channels: 2,
     sampleRate: 48000,
   },
@@ -128,6 +168,24 @@ const INITIAL_APPS: AppStream[] = [
 ];
 
 const volumeDebounceTimers: Record<number, ReturnType<typeof setTimeout>> = {};
+let noiseGateDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+let compressorDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+export const DEFAULT_NOISE_GATE: NoiseGateState = {
+  enabled: false,
+  thresholdDb: -40.0,
+  attackMs: 5.0,
+  releaseMs: 100.0,
+};
+
+export const DEFAULT_COMPRESSOR: CompressorState = {
+  enabled: false,
+  thresholdDb: -18.0,
+  ratio: 4.0,
+  attackMs: 10.0,
+  releaseMs: 100.0,
+  makeupGainDb: 0.0,
+};
 
 interface CachedConfig {
   channelFaderDb: Record<number, number>;
@@ -135,6 +193,8 @@ interface CachedConfig {
   channelRoutings: Record<number, string>;
   channelNoiseEnabled: Record<number, boolean>;
   eqBands: Record<number, number[]>;
+  noiseGate?: NoiseGateState;
+  compressor?: CompressorState;
 }
 
 function loadLocalConfig(): Partial<CachedConfig> {
@@ -176,7 +236,7 @@ function dispatchChannelMute(channel: AudioChannel, muted: boolean) {
   });
 }
 
-export const useAudioStore = create<AudioStoreState>((set) => ({
+export const useAudioStore = create<AudioStoreState>((set, get) => ({
   connectionStatus: "disconnected",
   isAudioActive: false,
   latencyMs: 5.3,
@@ -193,6 +253,7 @@ export const useAudioStore = create<AudioStoreState>((set) => ({
     [AudioChannel.CHAT]: -18.2,
     [AudioChannel.MEDIA]: -12.4,
     [AudioChannel.AUX]: -24.0,
+    [AudioChannel.MIC]: -18.0,
   },
 
   channelVolumes: {
@@ -201,6 +262,7 @@ export const useAudioStore = create<AudioStoreState>((set) => ({
     [AudioChannel.CHAT]: 85,
     [AudioChannel.MEDIA]: 85,
     [AudioChannel.AUX]: 85,
+    [AudioChannel.MIC]: 85,
   },
   channelFaderDb: {
     [AudioChannel.MASTER]: 0.0,
@@ -208,6 +270,7 @@ export const useAudioStore = create<AudioStoreState>((set) => ({
     [AudioChannel.CHAT]: 0.0,
     [AudioChannel.MEDIA]: 0.0,
     [AudioChannel.AUX]: 0.0,
+    [AudioChannel.MIC]: 0.0,
     ...initialCached.channelFaderDb,
   },
   channelMuted: {
@@ -216,15 +279,18 @@ export const useAudioStore = create<AudioStoreState>((set) => ({
     [AudioChannel.CHAT]: false,
     [AudioChannel.MEDIA]: false,
     [AudioChannel.AUX]: false,
+    [AudioChannel.MIC]: false,
     ...initialCached.channelMuted,
   },
 
   hardwareOutputs: DEFAULT_HARDWARE_OUTPUTS,
+  hardwareInputs: DEFAULT_HARDWARE_INPUTS,
   channelRoutings: {
     [AudioChannel.GAME]: "alsa_output.usb-headset",
     [AudioChannel.CHAT]: "alsa_output.usb-headset",
     [AudioChannel.MEDIA]: "alsa_output.pci-builtin",
     [AudioChannel.AUX]: "none",
+    [AudioChannel.MIC]: "none",
     ...initialCached.channelRoutings,
   },
   isRoutingUpdating: {},
@@ -238,6 +304,7 @@ export const useAudioStore = create<AudioStoreState>((set) => ({
     [AudioChannel.CHAT]: [...DEFAULT_EQ_BANDS],
     [AudioChannel.MEDIA]: [...DEFAULT_EQ_BANDS],
     [AudioChannel.AUX]: [...DEFAULT_EQ_BANDS],
+    [AudioChannel.MIC]: [...DEFAULT_EQ_BANDS],
     ...initialCached.eqBands,
   },
 
@@ -246,9 +313,16 @@ export const useAudioStore = create<AudioStoreState>((set) => ({
     [AudioChannel.CHAT]: false,
     [AudioChannel.MEDIA]: false,
     [AudioChannel.AUX]: false,
+    [AudioChannel.MIC]: false,
     ...initialCached.channelNoiseEnabled,
   },
   isTogglingAiNoise: {},
+
+  noiseGate: initialCached.noiseGate ?? DEFAULT_NOISE_GATE,
+  compressor: initialCached.compressor ?? DEFAULT_COMPRESSOR,
+
+  micTestEnabled: false,
+  isTogglingMicTest: false,
 
   setConnectionStatus: (status, error = null) =>
     set({
@@ -321,6 +395,7 @@ export const useAudioStore = create<AudioStoreState>((set) => ({
         [AudioChannel.CHAT]: -100,
         [AudioChannel.MEDIA]: -100,
         [AudioChannel.AUX]: -100,
+        [AudioChannel.MIC]: -100,
       },
     }),
 
@@ -331,6 +406,16 @@ export const useAudioStore = create<AudioStoreState>((set) => ({
       set({ hardwareOutputs: res.devices });
     } catch (err: unknown) {
       console.warn("Failed to fetch hardware outputs:", err);
+    }
+  },
+
+  fetchHardwareInputs: async () => {
+    try {
+      const call = routuneClient.getHardwareInputs({});
+      const res = await call.response;
+      set({ hardwareInputs: res.devices });
+    } catch (err: unknown) {
+      console.warn("Failed to fetch hardware inputs:", err);
     }
   },
 
@@ -374,6 +459,8 @@ export const useAudioStore = create<AudioStoreState>((set) => ({
       const nextRoutings: Record<number, string> = {};
       const nextEqBands: Record<number, number[]> = {};
       const nextNoise: Record<number, boolean> = {};
+      let nextNoiseGate: NoiseGateState | undefined;
+      let nextCompressor: CompressorState | undefined;
 
       for (const chState of res.channels) {
         const ch = chState.channel as AudioChannel;
@@ -386,6 +473,27 @@ export const useAudioStore = create<AudioStoreState>((set) => ({
           nextEqBands[ch] = [...chState.eqBands];
         }
         nextNoise[ch] = chState.noiseCancellation;
+
+        if (ch === AudioChannel.MIC) {
+          if (chState.noiseGate) {
+            nextNoiseGate = {
+              enabled: chState.noiseGate.enabled,
+              thresholdDb: chState.noiseGate.thresholdDb,
+              attackMs: chState.noiseGate.attackMs,
+              releaseMs: chState.noiseGate.releaseMs,
+            };
+          }
+          if (chState.compressor) {
+            nextCompressor = {
+              enabled: chState.compressor.enabled,
+              thresholdDb: chState.compressor.thresholdDb,
+              ratio: chState.compressor.ratio,
+              attackMs: chState.compressor.attackMs,
+              releaseMs: chState.compressor.releaseMs,
+              makeupGainDb: chState.compressor.makeupGainDb,
+            };
+          }
+        }
       }
 
       set((s) => ({
@@ -394,6 +502,8 @@ export const useAudioStore = create<AudioStoreState>((set) => ({
         channelRoutings: { ...s.channelRoutings, ...nextRoutings },
         eqBands: { ...s.eqBands, ...nextEqBands },
         channelNoiseEnabled: { ...s.channelNoiseEnabled, ...nextNoise },
+        ...(nextNoiseGate ? { noiseGate: nextNoiseGate } : {}),
+        ...(nextCompressor ? { compressor: nextCompressor } : {}),
       }));
 
       saveLocalConfig({
@@ -402,9 +512,36 @@ export const useAudioStore = create<AudioStoreState>((set) => ({
         channelRoutings: nextRoutings,
         eqBands: nextEqBands,
         channelNoiseEnabled: nextNoise,
+        ...(nextNoiseGate ? { noiseGate: nextNoiseGate } : {}),
+        ...(nextCompressor ? { compressor: nextCompressor } : {}),
       });
     } catch (err: unknown) {
       console.warn("Failed to fetch daemon config:", err);
+    }
+  },
+
+  fetchMicTest: async () => {
+    try {
+      const call = routuneClient.getMicTest({});
+      const res = await call.response;
+      set({ micTestEnabled: res.enabled });
+    } catch (err: unknown) {
+      console.warn("Failed to get mic test status:", err);
+    }
+  },
+
+  toggleMicTest: async () => {
+    const next = !get().micTestEnabled;
+    set({ isTogglingMicTest: true, micTestEnabled: next });
+    try {
+      const call = routuneClient.setMicTest({ enabled: next });
+      const res = await call.response;
+      set({ micTestEnabled: res.enabled, isTogglingMicTest: false });
+      return res.enabled;
+    } catch (err: unknown) {
+      console.warn("Failed to toggle mic test:", err);
+      set({ micTestEnabled: !next, isTogglingMicTest: false });
+      return !next;
     }
   },
 
@@ -548,6 +685,62 @@ export const useAudioStore = create<AudioStoreState>((set) => ({
     }
   },
 
+  setNoiseGate: async (params: Partial<NoiseGateState>) => {
+    const current = get().noiseGate;
+    const next: NoiseGateState = { ...current, ...params };
+    set({ noiseGate: next });
+    saveLocalConfig({ noiseGate: next });
+
+    if (noiseGateDebounceTimer) {
+      clearTimeout(noiseGateDebounceTimer);
+    }
+
+    return new Promise<boolean>((resolve) => {
+      noiseGateDebounceTimer = setTimeout(async () => {
+        noiseGateDebounceTimer = null;
+        try {
+          const call = routuneClient.setNoiseGate({
+            channel: AudioChannel.MIC,
+            config: next,
+          });
+          await call.response;
+          resolve(true);
+        } catch (err) {
+          console.warn("Failed to set noise gate:", err);
+          resolve(false);
+        }
+      }, 50);
+    });
+  },
+
+  setCompressor: async (params: Partial<CompressorState>) => {
+    const current = get().compressor;
+    const next: CompressorState = { ...current, ...params };
+    set({ compressor: next });
+    saveLocalConfig({ compressor: next });
+
+    if (compressorDebounceTimer) {
+      clearTimeout(compressorDebounceTimer);
+    }
+
+    return new Promise<boolean>((resolve) => {
+      compressorDebounceTimer = setTimeout(async () => {
+        compressorDebounceTimer = null;
+        try {
+          const call = routuneClient.setCompressor({
+            channel: AudioChannel.MIC,
+            config: next,
+          });
+          await call.response;
+          resolve(true);
+        } catch (err) {
+          console.warn("Failed to set compressor:", err);
+          resolve(false);
+        }
+      }, 50);
+    });
+  },
+
   setActiveView: (activeView) => set({ activeView }),
 
   setChannelVolume: (channel, volume) =>
@@ -580,6 +773,7 @@ export const useAudioStore = create<AudioStoreState>((set) => ({
       [AudioChannel.CHAT]: 0.0,
       [AudioChannel.MEDIA]: 0.0,
       [AudioChannel.AUX]: 0.0,
+      [AudioChannel.MIC]: 0.0,
     };
     const defaultMute = {
       [AudioChannel.MASTER]: false,
@@ -587,6 +781,7 @@ export const useAudioStore = create<AudioStoreState>((set) => ({
       [AudioChannel.CHAT]: false,
       [AudioChannel.MEDIA]: false,
       [AudioChannel.AUX]: false,
+      [AudioChannel.MIC]: false,
     };
     saveLocalConfig({ channelFaderDb: defaultFader, channelMuted: defaultMute });
     set((s) => ({
@@ -599,6 +794,7 @@ export const useAudioStore = create<AudioStoreState>((set) => ({
         [AudioChannel.CHAT]: 80,
         [AudioChannel.MEDIA]: 80,
         [AudioChannel.AUX]: 80,
+        [AudioChannel.MIC]: 80,
       },
     }));
     for (const ch of [
@@ -607,6 +803,7 @@ export const useAudioStore = create<AudioStoreState>((set) => ({
       AudioChannel.CHAT,
       AudioChannel.MEDIA,
       AudioChannel.AUX,
+      AudioChannel.MIC,
     ]) {
       dispatchChannelVolume(ch, 0.0);
       dispatchChannelMute(ch, false);
@@ -647,3 +844,6 @@ export const selectTelemetry = (state: AudioStoreState) => ({
 export const selectActiveApps = (state: AudioStoreState) => state.activeApps;
 export const selectIsRoutingApp = (state: AudioStoreState) => state.isRoutingApp;
 export const selectChannelNoiseEnabled = (state: AudioStoreState) => state.channelNoiseEnabled;
+export const selectHardwareOutputs = (state: AudioStoreState) => state.hardwareOutputs;
+export const selectHardwareInputs = (state: AudioStoreState) => state.hardwareInputs;
+export const selectMicTestEnabled = (state: AudioStoreState) => state.micTestEnabled;

@@ -38,6 +38,7 @@ export function useTelemetryStream() {
 
         // Fetch physical hardware output devices and authoritative daemon config
         useAudioStore.getState().fetchHardwareOutputs();
+        useAudioStore.getState().fetchHardwareInputs();
         useAudioStore.getState().fetchDaemonConfig();
         useAudioStore.getState().fetchActiveApps();
 

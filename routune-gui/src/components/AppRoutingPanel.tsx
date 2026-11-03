@@ -13,6 +13,7 @@ import { CSS } from "@dnd-kit/utilities";
 import {
   Gamepad2,
   MessageSquare,
+  Mic,
   Music,
   Radio,
   GripVertical,
@@ -20,6 +21,7 @@ import {
   RotateCw,
   ArrowDown,
   Loader2,
+  Headphones,
 } from "lucide-react";
 import { useAudioStore } from "../store/useAudioStore";
 import { AudioChannel } from "../proto/routune";
@@ -246,10 +248,16 @@ export function AppRoutingPanel() {
   const connectionStatus = useAudioStore((s) => s.connectionStatus);
   const activeApps = useAudioStore((s) => s.activeApps);
   const fetchActiveApps = useAudioStore((s) => s.fetchActiveApps);
+  const hardwareInputs = useAudioStore((s) => s.hardwareInputs);
+  const fetchHardwareInputs = useAudioStore((s) => s.fetchHardwareInputs);
   const routeApplication = useAudioStore((s) => s.routeApplication);
   const channelRoutings = useAudioStore((s) => s.channelRoutings);
   const setChannelRouting = useAudioStore((s) => s.setChannelRouting);
   const isRoutingUpdating = useAudioStore((s) => s.isRoutingUpdating);
+  const micTestEnabled = useAudioStore((s) => s.micTestEnabled);
+  const isTogglingMicTest = useAudioStore((s) => s.isTogglingMicTest);
+  const toggleMicTest = useAudioStore((s) => s.toggleMicTest);
+  const fetchMicTest = useAudioStore((s) => s.fetchMicTest);
 
   const [activeDragApp, setActiveDragApp] = useState<AppStream | null>(null);
   const [isManualRefreshing, setIsManualRefreshing] = useState(false);
@@ -265,15 +273,17 @@ export function AppRoutingPanel() {
   useEffect(() => {
     if (connectionStatus !== "connected") return;
     fetchActiveApps();
+    fetchHardwareInputs();
+    fetchMicTest();
     const interval = setInterval(() => {
       fetchActiveApps();
     }, 2500);
     return () => clearInterval(interval);
-  }, [connectionStatus, fetchActiveApps]);
+  }, [connectionStatus, fetchActiveApps, fetchHardwareInputs, fetchMicTest]);
 
   const handleManualRefresh = async () => {
     setIsManualRefreshing(true);
-    await fetchActiveApps();
+    await Promise.all([fetchActiveApps(), fetchHardwareInputs(), fetchMicTest()]);
     setTimeout(() => setIsManualRefreshing(false), 500);
   };
 
@@ -331,6 +341,70 @@ export function AppRoutingPanel() {
         <h1 className="text-xl font-bold tracking-tight text-white font-sans">
           Routing
         </h1>
+      </div>
+
+      {/* Mic Input Card (Physical Capture Hardware -> PipeWire Virtual Source) */}
+      <div className="rounded-3xl border-2 border-white/10 bg-[#202026] p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex items-center gap-3.5">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-rose-500/15 border-2 border-rose-500/30 text-rose-400">
+            <Mic className="h-5 w-5" />
+          </div>
+          <div className="flex flex-col gap-0.5">
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-bold text-white tracking-tight">Mic Input</h2>
+              <span className="rounded-md border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-[10px] font-mono text-rose-300">
+                Audio/Source/Virtual
+              </span>
+            </div>
+            <p className="text-xs text-zinc-400">
+              Direct physical microphone capture stream into "Routune Mic" PipeWire virtual source.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2.5 w-full md:w-auto">
+          <button
+            type="button"
+            disabled={isTogglingMicTest}
+            onClick={() => toggleMicTest()}
+            className={`flex items-center gap-2 rounded-xl border-2 px-3.5 py-2.5 text-xs font-semibold transition-all shrink-0 ${
+              micTestEnabled
+                ? "border-emerald-500/60 bg-emerald-500/20 text-emerald-300 shadow-lg shadow-emerald-950/40"
+                : "border-white/10 bg-[#16161b] text-zinc-400 hover:border-white/20 hover:text-zinc-200"
+            } disabled:opacity-50`}
+            title="Listen to microphone with DSP effects in real time through primary output"
+          >
+            {isTogglingMicTest ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-emerald-400" />
+            ) : (
+              <Headphones className={`h-3.5 w-3.5 ${micTestEnabled ? "text-emerald-400" : "text-zinc-400"}`} />
+            )}
+            <span>{micTestEnabled ? "Testing Mic (Active)" : "Test Mic"}</span>
+          </button>
+
+          <div className="relative w-full md:w-72">
+            <select
+              value={channelRoutings[AudioChannel.MIC] || "none"}
+              disabled={isRoutingUpdating[AudioChannel.MIC]}
+              onChange={(e) => setChannelRouting(AudioChannel.MIC, e.target.value)}
+              className="w-full appearance-none rounded-xl border-2 border-white/10 bg-[#16161b] py-2.5 pl-3 pr-8 text-xs font-medium text-zinc-200 focus:border-[#ff5511] focus:outline-none cursor-pointer disabled:opacity-50"
+            >
+              <option value="none">No input (disabled)</option>
+              {hardwareInputs.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.displayName}
+                </option>
+              ))}
+            </select>
+            <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 flex items-center text-zinc-400">
+              {isRoutingUpdating[AudioChannel.MIC] ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin text-[#ff5511]" />
+              ) : (
+                <ChevronDown className="h-3.5 w-3.5" />
+              )}
+            </div>
+          </div>
+        </div>
       </div>
 
       <DndContext

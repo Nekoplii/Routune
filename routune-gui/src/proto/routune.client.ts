@@ -4,9 +4,13 @@
 import type { RpcTransport } from "@protobuf-ts/runtime-rpc";
 import type { ServiceInfo } from "@protobuf-ts/runtime-rpc";
 import { RoutuneControl } from "./routune";
+import type { MicTestResponse } from "./routune";
+import type { MicTestRequest } from "./routune";
 import type { DaemonConfigResponse } from "./routune";
 import type { ChannelMuteRequest } from "./routune";
 import type { ChannelVolumeRequest } from "./routune";
+import type { CompressorRequest } from "./routune";
+import type { NoiseGateRequest } from "./routune";
 import type { AiNoiseRequest } from "./routune";
 import type { AppRouteRequest } from "./routune";
 import type { AppList } from "./routune";
@@ -40,6 +44,10 @@ export interface IRoutuneControlClient {
      */
     getHardwareOutputs(input: Empty, options?: RpcOptions): UnaryCall<Empty, DeviceList>;
     /**
+     * @generated from protobuf rpc: GetHardwareInputs
+     */
+    getHardwareInputs(input: Empty, options?: RpcOptions): UnaryCall<Empty, DeviceList>;
+    /**
      * @generated from protobuf rpc: SetChannelRouting
      */
     setChannelRouting(input: RouteRequest, options?: RpcOptions): UnaryCall<RouteRequest, RouteResponse>;
@@ -60,6 +68,14 @@ export interface IRoutuneControlClient {
      */
     toggleAiNoise(input: AiNoiseRequest, options?: RpcOptions): UnaryCall<AiNoiseRequest, Empty>;
     /**
+     * @generated from protobuf rpc: SetNoiseGate
+     */
+    setNoiseGate(input: NoiseGateRequest, options?: RpcOptions): UnaryCall<NoiseGateRequest, Empty>;
+    /**
+     * @generated from protobuf rpc: SetCompressor
+     */
+    setCompressor(input: CompressorRequest, options?: RpcOptions): UnaryCall<CompressorRequest, Empty>;
+    /**
      * @generated from protobuf rpc: SetChannelVolume
      */
     setChannelVolume(input: ChannelVolumeRequest, options?: RpcOptions): UnaryCall<ChannelVolumeRequest, Empty>;
@@ -71,6 +87,14 @@ export interface IRoutuneControlClient {
      * @generated from protobuf rpc: GetDaemonConfig
      */
     getDaemonConfig(input: Empty, options?: RpcOptions): UnaryCall<Empty, DaemonConfigResponse>;
+    /**
+     * @generated from protobuf rpc: SetMicTest
+     */
+    setMicTest(input: MicTestRequest, options?: RpcOptions): UnaryCall<MicTestRequest, MicTestResponse>;
+    /**
+     * @generated from protobuf rpc: GetMicTest
+     */
+    getMicTest(input: Empty, options?: RpcOptions): UnaryCall<Empty, MicTestResponse>;
 }
 /**
  * @generated from protobuf service routune.RoutuneControl
@@ -103,59 +127,94 @@ export class RoutuneControlClient implements IRoutuneControlClient, ServiceInfo 
         return stackIntercept<Empty, DeviceList>("unary", this._transport, method, opt, input);
     }
     /**
+     * @generated from protobuf rpc: GetHardwareInputs
+     */
+    getHardwareInputs(input: Empty, options?: RpcOptions): UnaryCall<Empty, DeviceList> {
+        const method = this.methods[3], opt = this._transport.mergeOptions(options);
+        return stackIntercept<Empty, DeviceList>("unary", this._transport, method, opt, input);
+    }
+    /**
      * @generated from protobuf rpc: SetChannelRouting
      */
     setChannelRouting(input: RouteRequest, options?: RpcOptions): UnaryCall<RouteRequest, RouteResponse> {
-        const method = this.methods[3], opt = this._transport.mergeOptions(options);
+        const method = this.methods[4], opt = this._transport.mergeOptions(options);
         return stackIntercept<RouteRequest, RouteResponse>("unary", this._transport, method, opt, input);
     }
     /**
      * @generated from protobuf rpc: SetEqBand
      */
     setEqBand(input: EqRequest, options?: RpcOptions): UnaryCall<EqRequest, Empty> {
-        const method = this.methods[4], opt = this._transport.mergeOptions(options);
+        const method = this.methods[5], opt = this._transport.mergeOptions(options);
         return stackIntercept<EqRequest, Empty>("unary", this._transport, method, opt, input);
     }
     /**
      * @generated from protobuf rpc: GetActiveApplications
      */
     getActiveApplications(input: Empty, options?: RpcOptions): UnaryCall<Empty, AppList> {
-        const method = this.methods[5], opt = this._transport.mergeOptions(options);
+        const method = this.methods[6], opt = this._transport.mergeOptions(options);
         return stackIntercept<Empty, AppList>("unary", this._transport, method, opt, input);
     }
     /**
      * @generated from protobuf rpc: RouteApplication
      */
     routeApplication(input: AppRouteRequest, options?: RpcOptions): UnaryCall<AppRouteRequest, Empty> {
-        const method = this.methods[6], opt = this._transport.mergeOptions(options);
+        const method = this.methods[7], opt = this._transport.mergeOptions(options);
         return stackIntercept<AppRouteRequest, Empty>("unary", this._transport, method, opt, input);
     }
     /**
      * @generated from protobuf rpc: ToggleAiNoise
      */
     toggleAiNoise(input: AiNoiseRequest, options?: RpcOptions): UnaryCall<AiNoiseRequest, Empty> {
-        const method = this.methods[7], opt = this._transport.mergeOptions(options);
+        const method = this.methods[8], opt = this._transport.mergeOptions(options);
         return stackIntercept<AiNoiseRequest, Empty>("unary", this._transport, method, opt, input);
+    }
+    /**
+     * @generated from protobuf rpc: SetNoiseGate
+     */
+    setNoiseGate(input: NoiseGateRequest, options?: RpcOptions): UnaryCall<NoiseGateRequest, Empty> {
+        const method = this.methods[9], opt = this._transport.mergeOptions(options);
+        return stackIntercept<NoiseGateRequest, Empty>("unary", this._transport, method, opt, input);
+    }
+    /**
+     * @generated from protobuf rpc: SetCompressor
+     */
+    setCompressor(input: CompressorRequest, options?: RpcOptions): UnaryCall<CompressorRequest, Empty> {
+        const method = this.methods[10], opt = this._transport.mergeOptions(options);
+        return stackIntercept<CompressorRequest, Empty>("unary", this._transport, method, opt, input);
     }
     /**
      * @generated from protobuf rpc: SetChannelVolume
      */
     setChannelVolume(input: ChannelVolumeRequest, options?: RpcOptions): UnaryCall<ChannelVolumeRequest, Empty> {
-        const method = this.methods[8], opt = this._transport.mergeOptions(options);
+        const method = this.methods[11], opt = this._transport.mergeOptions(options);
         return stackIntercept<ChannelVolumeRequest, Empty>("unary", this._transport, method, opt, input);
     }
     /**
      * @generated from protobuf rpc: SetChannelMute
      */
     setChannelMute(input: ChannelMuteRequest, options?: RpcOptions): UnaryCall<ChannelMuteRequest, Empty> {
-        const method = this.methods[9], opt = this._transport.mergeOptions(options);
+        const method = this.methods[12], opt = this._transport.mergeOptions(options);
         return stackIntercept<ChannelMuteRequest, Empty>("unary", this._transport, method, opt, input);
     }
     /**
      * @generated from protobuf rpc: GetDaemonConfig
      */
     getDaemonConfig(input: Empty, options?: RpcOptions): UnaryCall<Empty, DaemonConfigResponse> {
-        const method = this.methods[10], opt = this._transport.mergeOptions(options);
+        const method = this.methods[13], opt = this._transport.mergeOptions(options);
         return stackIntercept<Empty, DaemonConfigResponse>("unary", this._transport, method, opt, input);
+    }
+    /**
+     * @generated from protobuf rpc: SetMicTest
+     */
+    setMicTest(input: MicTestRequest, options?: RpcOptions): UnaryCall<MicTestRequest, MicTestResponse> {
+        const method = this.methods[14], opt = this._transport.mergeOptions(options);
+        return stackIntercept<MicTestRequest, MicTestResponse>("unary", this._transport, method, opt, input);
+    }
+    /**
+     * @generated from protobuf rpc: GetMicTest
+     */
+    getMicTest(input: Empty, options?: RpcOptions): UnaryCall<Empty, MicTestResponse> {
+        const method = this.methods[15], opt = this._transport.mergeOptions(options);
+        return stackIntercept<Empty, MicTestResponse>("unary", this._transport, method, opt, input);
     }
 }

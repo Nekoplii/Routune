@@ -2,15 +2,33 @@
 // @generated from protobuf file "routune.proto" (package "routune", syntax proto3)
 // tslint:disable
 import { ServiceType } from "@protobuf-ts/runtime-rpc";
-import { WireType } from "@protobuf-ts/runtime";
 import type { BinaryWriteOptions } from "@protobuf-ts/runtime";
 import type { IBinaryWriter } from "@protobuf-ts/runtime";
+import { WireType } from "@protobuf-ts/runtime";
 import type { BinaryReadOptions } from "@protobuf-ts/runtime";
 import type { IBinaryReader } from "@protobuf-ts/runtime";
 import { UnknownFieldHandler } from "@protobuf-ts/runtime";
 import type { PartialMessage } from "@protobuf-ts/runtime";
 import { reflectionMergePartial } from "@protobuf-ts/runtime";
 import { MessageType } from "@protobuf-ts/runtime";
+/**
+ * @generated from protobuf message routune.MicTestRequest
+ */
+export interface MicTestRequest {
+    /**
+     * @generated from protobuf field: bool enabled = 1
+     */
+    enabled: boolean;
+}
+/**
+ * @generated from protobuf message routune.MicTestResponse
+ */
+export interface MicTestResponse {
+    /**
+     * @generated from protobuf field: bool enabled = 1
+     */
+    enabled: boolean;
+}
 /**
  * @generated from protobuf message routune.Empty
  */
@@ -331,6 +349,82 @@ export interface AiNoiseRequest {
     enabled: boolean;
 }
 /**
+ * @generated from protobuf message routune.NoiseGateConfig
+ */
+export interface NoiseGateConfig {
+    /**
+     * @generated from protobuf field: bool enabled = 1
+     */
+    enabled: boolean;
+    /**
+     * @generated from protobuf field: float threshold_db = 2
+     */
+    thresholdDb: number;
+    /**
+     * @generated from protobuf field: float attack_ms = 3
+     */
+    attackMs: number;
+    /**
+     * @generated from protobuf field: float release_ms = 4
+     */
+    releaseMs: number;
+}
+/**
+ * @generated from protobuf message routune.CompressorConfig
+ */
+export interface CompressorConfig {
+    /**
+     * @generated from protobuf field: bool enabled = 1
+     */
+    enabled: boolean;
+    /**
+     * @generated from protobuf field: float threshold_db = 2
+     */
+    thresholdDb: number;
+    /**
+     * @generated from protobuf field: float ratio = 3
+     */
+    ratio: number;
+    /**
+     * @generated from protobuf field: float attack_ms = 4
+     */
+    attackMs: number;
+    /**
+     * @generated from protobuf field: float release_ms = 5
+     */
+    releaseMs: number;
+    /**
+     * @generated from protobuf field: float makeup_gain_db = 6
+     */
+    makeupGainDb: number;
+}
+/**
+ * @generated from protobuf message routune.NoiseGateRequest
+ */
+export interface NoiseGateRequest {
+    /**
+     * @generated from protobuf field: routune.AudioChannel channel = 1
+     */
+    channel: AudioChannel;
+    /**
+     * @generated from protobuf field: routune.NoiseGateConfig config = 2
+     */
+    config?: NoiseGateConfig;
+}
+/**
+ * @generated from protobuf message routune.CompressorRequest
+ */
+export interface CompressorRequest {
+    /**
+     * @generated from protobuf field: routune.AudioChannel channel = 1
+     */
+    channel: AudioChannel;
+    /**
+     * @generated from protobuf field: routune.CompressorConfig config = 2
+     */
+    config?: CompressorConfig;
+}
+/**
  * @generated from protobuf message routune.ChannelVolumeRequest
  */
 export interface ChannelVolumeRequest {
@@ -384,6 +478,14 @@ export interface ChannelConfigState {
      * @generated from protobuf field: bool noise_cancellation = 6
      */
     noiseCancellation: boolean;
+    /**
+     * @generated from protobuf field: routune.NoiseGateConfig noise_gate = 7
+     */
+    noiseGate?: NoiseGateConfig;
+    /**
+     * @generated from protobuf field: routune.CompressorConfig compressor = 8
+     */
+    compressor?: CompressorConfig;
 }
 /**
  * @generated from protobuf message routune.DaemonConfigResponse
@@ -417,8 +519,106 @@ export enum AudioChannel {
     /**
      * @generated from protobuf enum value: AUX = 4;
      */
-    AUX = 4
+    AUX = 4,
+    /**
+     * @generated from protobuf enum value: MIC = 5;
+     */
+    MIC = 5
 }
+// @generated message type with reflection information, may provide speed optimized methods
+class MicTestRequest$Type extends MessageType<MicTestRequest> {
+    constructor() {
+        super("routune.MicTestRequest", [
+            { no: 1, name: "enabled", kind: "scalar", T: 8 /*ScalarType.BOOL*/ }
+        ]);
+    }
+    create(value?: PartialMessage<MicTestRequest>): MicTestRequest {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.enabled = false;
+        if (value !== undefined)
+            reflectionMergePartial<MicTestRequest>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: MicTestRequest): MicTestRequest {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* bool enabled */ 1:
+                    message.enabled = reader.bool();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: MicTestRequest, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* bool enabled = 1; */
+        if (message.enabled !== false)
+            writer.tag(1, WireType.Varint).bool(message.enabled);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message routune.MicTestRequest
+ */
+export const MicTestRequest = new MicTestRequest$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class MicTestResponse$Type extends MessageType<MicTestResponse> {
+    constructor() {
+        super("routune.MicTestResponse", [
+            { no: 1, name: "enabled", kind: "scalar", T: 8 /*ScalarType.BOOL*/ }
+        ]);
+    }
+    create(value?: PartialMessage<MicTestResponse>): MicTestResponse {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.enabled = false;
+        if (value !== undefined)
+            reflectionMergePartial<MicTestResponse>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: MicTestResponse): MicTestResponse {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* bool enabled */ 1:
+                    message.enabled = reader.bool();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: MicTestResponse, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* bool enabled = 1; */
+        if (message.enabled !== false)
+            writer.tag(1, WireType.Varint).bool(message.enabled);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message routune.MicTestResponse
+ */
+export const MicTestResponse = new MicTestResponse$Type();
 // @generated message type with reflection information, may provide speed optimized methods
 class Empty$Type extends MessageType<Empty> {
     constructor() {
@@ -1615,6 +1815,272 @@ class AiNoiseRequest$Type extends MessageType<AiNoiseRequest> {
  */
 export const AiNoiseRequest = new AiNoiseRequest$Type();
 // @generated message type with reflection information, may provide speed optimized methods
+class NoiseGateConfig$Type extends MessageType<NoiseGateConfig> {
+    constructor() {
+        super("routune.NoiseGateConfig", [
+            { no: 1, name: "enabled", kind: "scalar", T: 8 /*ScalarType.BOOL*/ },
+            { no: 2, name: "threshold_db", kind: "scalar", T: 2 /*ScalarType.FLOAT*/ },
+            { no: 3, name: "attack_ms", kind: "scalar", T: 2 /*ScalarType.FLOAT*/ },
+            { no: 4, name: "release_ms", kind: "scalar", T: 2 /*ScalarType.FLOAT*/ }
+        ]);
+    }
+    create(value?: PartialMessage<NoiseGateConfig>): NoiseGateConfig {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.enabled = false;
+        message.thresholdDb = 0;
+        message.attackMs = 0;
+        message.releaseMs = 0;
+        if (value !== undefined)
+            reflectionMergePartial<NoiseGateConfig>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: NoiseGateConfig): NoiseGateConfig {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* bool enabled */ 1:
+                    message.enabled = reader.bool();
+                    break;
+                case /* float threshold_db */ 2:
+                    message.thresholdDb = reader.float();
+                    break;
+                case /* float attack_ms */ 3:
+                    message.attackMs = reader.float();
+                    break;
+                case /* float release_ms */ 4:
+                    message.releaseMs = reader.float();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: NoiseGateConfig, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* bool enabled = 1; */
+        if (message.enabled !== false)
+            writer.tag(1, WireType.Varint).bool(message.enabled);
+        /* float threshold_db = 2; */
+        if (message.thresholdDb !== 0)
+            writer.tag(2, WireType.Bit32).float(message.thresholdDb);
+        /* float attack_ms = 3; */
+        if (message.attackMs !== 0)
+            writer.tag(3, WireType.Bit32).float(message.attackMs);
+        /* float release_ms = 4; */
+        if (message.releaseMs !== 0)
+            writer.tag(4, WireType.Bit32).float(message.releaseMs);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message routune.NoiseGateConfig
+ */
+export const NoiseGateConfig = new NoiseGateConfig$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class CompressorConfig$Type extends MessageType<CompressorConfig> {
+    constructor() {
+        super("routune.CompressorConfig", [
+            { no: 1, name: "enabled", kind: "scalar", T: 8 /*ScalarType.BOOL*/ },
+            { no: 2, name: "threshold_db", kind: "scalar", T: 2 /*ScalarType.FLOAT*/ },
+            { no: 3, name: "ratio", kind: "scalar", T: 2 /*ScalarType.FLOAT*/ },
+            { no: 4, name: "attack_ms", kind: "scalar", T: 2 /*ScalarType.FLOAT*/ },
+            { no: 5, name: "release_ms", kind: "scalar", T: 2 /*ScalarType.FLOAT*/ },
+            { no: 6, name: "makeup_gain_db", kind: "scalar", T: 2 /*ScalarType.FLOAT*/ }
+        ]);
+    }
+    create(value?: PartialMessage<CompressorConfig>): CompressorConfig {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.enabled = false;
+        message.thresholdDb = 0;
+        message.ratio = 0;
+        message.attackMs = 0;
+        message.releaseMs = 0;
+        message.makeupGainDb = 0;
+        if (value !== undefined)
+            reflectionMergePartial<CompressorConfig>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: CompressorConfig): CompressorConfig {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* bool enabled */ 1:
+                    message.enabled = reader.bool();
+                    break;
+                case /* float threshold_db */ 2:
+                    message.thresholdDb = reader.float();
+                    break;
+                case /* float ratio */ 3:
+                    message.ratio = reader.float();
+                    break;
+                case /* float attack_ms */ 4:
+                    message.attackMs = reader.float();
+                    break;
+                case /* float release_ms */ 5:
+                    message.releaseMs = reader.float();
+                    break;
+                case /* float makeup_gain_db */ 6:
+                    message.makeupGainDb = reader.float();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: CompressorConfig, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* bool enabled = 1; */
+        if (message.enabled !== false)
+            writer.tag(1, WireType.Varint).bool(message.enabled);
+        /* float threshold_db = 2; */
+        if (message.thresholdDb !== 0)
+            writer.tag(2, WireType.Bit32).float(message.thresholdDb);
+        /* float ratio = 3; */
+        if (message.ratio !== 0)
+            writer.tag(3, WireType.Bit32).float(message.ratio);
+        /* float attack_ms = 4; */
+        if (message.attackMs !== 0)
+            writer.tag(4, WireType.Bit32).float(message.attackMs);
+        /* float release_ms = 5; */
+        if (message.releaseMs !== 0)
+            writer.tag(5, WireType.Bit32).float(message.releaseMs);
+        /* float makeup_gain_db = 6; */
+        if (message.makeupGainDb !== 0)
+            writer.tag(6, WireType.Bit32).float(message.makeupGainDb);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message routune.CompressorConfig
+ */
+export const CompressorConfig = new CompressorConfig$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class NoiseGateRequest$Type extends MessageType<NoiseGateRequest> {
+    constructor() {
+        super("routune.NoiseGateRequest", [
+            { no: 1, name: "channel", kind: "enum", T: () => ["routune.AudioChannel", AudioChannel] },
+            { no: 2, name: "config", kind: "message", T: () => NoiseGateConfig }
+        ]);
+    }
+    create(value?: PartialMessage<NoiseGateRequest>): NoiseGateRequest {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.channel = 0;
+        if (value !== undefined)
+            reflectionMergePartial<NoiseGateRequest>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: NoiseGateRequest): NoiseGateRequest {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* routune.AudioChannel channel */ 1:
+                    message.channel = reader.int32();
+                    break;
+                case /* routune.NoiseGateConfig config */ 2:
+                    message.config = NoiseGateConfig.internalBinaryRead(reader, reader.uint32(), options, message.config);
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: NoiseGateRequest, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* routune.AudioChannel channel = 1; */
+        if (message.channel !== 0)
+            writer.tag(1, WireType.Varint).int32(message.channel);
+        /* routune.NoiseGateConfig config = 2; */
+        if (message.config)
+            NoiseGateConfig.internalBinaryWrite(message.config, writer.tag(2, WireType.LengthDelimited).fork(), options).join();
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message routune.NoiseGateRequest
+ */
+export const NoiseGateRequest = new NoiseGateRequest$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class CompressorRequest$Type extends MessageType<CompressorRequest> {
+    constructor() {
+        super("routune.CompressorRequest", [
+            { no: 1, name: "channel", kind: "enum", T: () => ["routune.AudioChannel", AudioChannel] },
+            { no: 2, name: "config", kind: "message", T: () => CompressorConfig }
+        ]);
+    }
+    create(value?: PartialMessage<CompressorRequest>): CompressorRequest {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.channel = 0;
+        if (value !== undefined)
+            reflectionMergePartial<CompressorRequest>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: CompressorRequest): CompressorRequest {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* routune.AudioChannel channel */ 1:
+                    message.channel = reader.int32();
+                    break;
+                case /* routune.CompressorConfig config */ 2:
+                    message.config = CompressorConfig.internalBinaryRead(reader, reader.uint32(), options, message.config);
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: CompressorRequest, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* routune.AudioChannel channel = 1; */
+        if (message.channel !== 0)
+            writer.tag(1, WireType.Varint).int32(message.channel);
+        /* routune.CompressorConfig config = 2; */
+        if (message.config)
+            CompressorConfig.internalBinaryWrite(message.config, writer.tag(2, WireType.LengthDelimited).fork(), options).join();
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message routune.CompressorRequest
+ */
+export const CompressorRequest = new CompressorRequest$Type();
+// @generated message type with reflection information, may provide speed optimized methods
 class ChannelVolumeRequest$Type extends MessageType<ChannelVolumeRequest> {
     constructor() {
         super("routune.ChannelVolumeRequest", [
@@ -1733,7 +2199,9 @@ class ChannelConfigState$Type extends MessageType<ChannelConfigState> {
             { no: 3, name: "muted", kind: "scalar", T: 8 /*ScalarType.BOOL*/ },
             { no: 4, name: "route_device", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
             { no: 5, name: "eq_bands", kind: "scalar", repeat: 1 /*RepeatType.PACKED*/, T: 2 /*ScalarType.FLOAT*/ },
-            { no: 6, name: "noise_cancellation", kind: "scalar", T: 8 /*ScalarType.BOOL*/ }
+            { no: 6, name: "noise_cancellation", kind: "scalar", T: 8 /*ScalarType.BOOL*/ },
+            { no: 7, name: "noise_gate", kind: "message", T: () => NoiseGateConfig },
+            { no: 8, name: "compressor", kind: "message", T: () => CompressorConfig }
         ]);
     }
     create(value?: PartialMessage<ChannelConfigState>): ChannelConfigState {
@@ -1775,6 +2243,12 @@ class ChannelConfigState$Type extends MessageType<ChannelConfigState> {
                 case /* bool noise_cancellation */ 6:
                     message.noiseCancellation = reader.bool();
                     break;
+                case /* routune.NoiseGateConfig noise_gate */ 7:
+                    message.noiseGate = NoiseGateConfig.internalBinaryRead(reader, reader.uint32(), options, message.noiseGate);
+                    break;
+                case /* routune.CompressorConfig compressor */ 8:
+                    message.compressor = CompressorConfig.internalBinaryRead(reader, reader.uint32(), options, message.compressor);
+                    break;
                 default:
                     let u = options.readUnknownField;
                     if (u === "throw")
@@ -1809,6 +2283,12 @@ class ChannelConfigState$Type extends MessageType<ChannelConfigState> {
         /* bool noise_cancellation = 6; */
         if (message.noiseCancellation !== false)
             writer.tag(6, WireType.Varint).bool(message.noiseCancellation);
+        /* routune.NoiseGateConfig noise_gate = 7; */
+        if (message.noiseGate)
+            NoiseGateConfig.internalBinaryWrite(message.noiseGate, writer.tag(7, WireType.LengthDelimited).fork(), options).join();
+        /* routune.CompressorConfig compressor = 8; */
+        if (message.compressor)
+            CompressorConfig.internalBinaryWrite(message.compressor, writer.tag(8, WireType.LengthDelimited).fork(), options).join();
         let u = options.writeUnknownFields;
         if (u !== false)
             (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
@@ -1873,12 +2353,17 @@ export const RoutuneControl = new ServiceType("routune.RoutuneControl", [
     { name: "Ping", options: {}, I: PingRequest, O: PingResponse },
     { name: "StreamTelemetry", serverStreaming: true, options: {}, I: TelemetryRequest, O: AudioTelemetry },
     { name: "GetHardwareOutputs", options: {}, I: Empty, O: DeviceList },
+    { name: "GetHardwareInputs", options: {}, I: Empty, O: DeviceList },
     { name: "SetChannelRouting", options: {}, I: RouteRequest, O: RouteResponse },
     { name: "SetEqBand", options: {}, I: EqRequest, O: Empty },
     { name: "GetActiveApplications", options: {}, I: Empty, O: AppList },
     { name: "RouteApplication", options: {}, I: AppRouteRequest, O: Empty },
     { name: "ToggleAiNoise", options: {}, I: AiNoiseRequest, O: Empty },
+    { name: "SetNoiseGate", options: {}, I: NoiseGateRequest, O: Empty },
+    { name: "SetCompressor", options: {}, I: CompressorRequest, O: Empty },
     { name: "SetChannelVolume", options: {}, I: ChannelVolumeRequest, O: Empty },
     { name: "SetChannelMute", options: {}, I: ChannelMuteRequest, O: Empty },
-    { name: "GetDaemonConfig", options: {}, I: Empty, O: DaemonConfigResponse }
+    { name: "GetDaemonConfig", options: {}, I: Empty, O: DaemonConfigResponse },
+    { name: "SetMicTest", options: {}, I: MicTestRequest, O: MicTestResponse },
+    { name: "GetMicTest", options: {}, I: Empty, O: MicTestResponse }
 ]);
