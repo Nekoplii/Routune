@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { getVersion } from "@tauri-apps/api/app";
 import {
   AudioWaveform,
   Check,
@@ -19,11 +20,31 @@ export function AboutView() {
   const hardwareOutputs = useAudioStore((s) => s.hardwareOutputs);
 
   const [copied, setCopied] = useState(false);
+  const [version, setVersion] = useState<string>(
+    import.meta.env.VITE_APP_VERSION || "dev"
+  );
+
+  useEffect(() => {
+    getVersion()
+      .then((v) => {
+        if (v) setVersion(v);
+      })
+      .catch(() => {
+        // Web preview or dev fallback
+      });
+  }, []);
+
+  const displayVersion =
+    version === "0.0.0-dev" || version === "dev"
+      ? "dev"
+      : version.startsWith("v")
+        ? version
+        : `v${version}`;
 
   const handleCopyDiagnostics = () => {
     const report = [
       "=== Routune Studio Diagnostic Report ===",
-      "Version: 0.1.0 (Desktop Linux x86_64)",
+      `Version: ${displayVersion} (Desktop Linux x86_64)`,
       "GUI Framework: Tauri v2 / React 18 / Tailwind CSS",
       `Engine Status: ${status.toUpperCase()}`,
       `IPC Latency: ${status === "connected" ? `${latency} ms` : "N/A"}`,
@@ -73,7 +94,7 @@ export function AboutView() {
             </h1>
             <div className="flex items-center gap-2">
               <span className="rounded-full border border-[#ff5511]/40 bg-[#ff5511]/10 px-3 py-0.5 text-xs font-mono font-semibold text-[#ff5511]">
-                v0.1.0
+                {displayVersion}
               </span>
               <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-[11px] font-mono text-zinc-400">
                 Linux (x86_64)

@@ -17,6 +17,41 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Extract Release Version
+        id: get_version
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "TAG_VERSION=$VERSION" >> $GITHUB_ENV
+          echo "VITE_APP_VERSION=$VERSION" >> $GITHUB_ENV
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: routune-gui/package-lock.json
+
+      - name: Inject Release Version
+        run: |
+          VERSION="${{ steps.get_version.outputs.VERSION }}"
+          echo "Injecting version $VERSION into workspace..."
+
+          # Update workspace Cargo.toml
+          sed -i -E "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml
+
+          # Update routune-gui package.json
+          npm --prefix routune-gui version "$VERSION" --no-git-tag-version --allow-same-version
+
+          # Update tauri.conf.json
+          node -e "
+            const fs = require('fs');
+            const file = 'routune-gui/src-tauri/tauri.conf.json';
+            const json = JSON.parse(fs.readFileSync(file, 'utf8'));
+            json.version = '$VERSION';
+            fs.writeFileSync(file, JSON.stringify(json, null, 2) + '\n');
+          "
+
       - name: Install System Dependencies
         run: |
           sudo apt-get update
@@ -45,13 +80,6 @@ jobs:
 
       - name: Build routune-daemon
         run: cargo build --release -p routune-daemon
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: 'npm'
-          cache-dependency-path: routune-gui/package-lock.json
 
       - name: Install GUI Dependencies
         working-directory: routune-gui
