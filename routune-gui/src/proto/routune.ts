@@ -347,6 +347,10 @@ export interface AiNoiseRequest {
      * @generated from protobuf field: bool enabled = 2
      */
     enabled: boolean;
+    /**
+     * @generated from protobuf field: float level = 3
+     */
+    level: number;
 }
 /**
  * @generated from protobuf message routune.NoiseGateConfig
@@ -486,6 +490,10 @@ export interface ChannelConfigState {
      * @generated from protobuf field: routune.CompressorConfig compressor = 8
      */
     compressor?: CompressorConfig;
+    /**
+     * @generated from protobuf field: float ai_noise_level = 9
+     */
+    aiNoiseLevel: number;
 }
 /**
  * @generated from protobuf message routune.DaemonConfigResponse
@@ -1764,13 +1772,15 @@ class AiNoiseRequest$Type extends MessageType<AiNoiseRequest> {
     constructor() {
         super("routune.AiNoiseRequest", [
             { no: 1, name: "channel", kind: "enum", T: () => ["routune.AudioChannel", AudioChannel] },
-            { no: 2, name: "enabled", kind: "scalar", T: 8 /*ScalarType.BOOL*/ }
+            { no: 2, name: "enabled", kind: "scalar", T: 8 /*ScalarType.BOOL*/ },
+            { no: 3, name: "level", kind: "scalar", T: 2 /*ScalarType.FLOAT*/ }
         ]);
     }
     create(value?: PartialMessage<AiNoiseRequest>): AiNoiseRequest {
         const message = globalThis.Object.create((this.messagePrototype!));
         message.channel = 0;
         message.enabled = false;
+        message.level = 0;
         if (value !== undefined)
             reflectionMergePartial<AiNoiseRequest>(this, message, value);
         return message;
@@ -1785,6 +1795,9 @@ class AiNoiseRequest$Type extends MessageType<AiNoiseRequest> {
                     break;
                 case /* bool enabled */ 2:
                     message.enabled = reader.bool();
+                    break;
+                case /* float level */ 3:
+                    message.level = reader.float();
                     break;
                 default:
                     let u = options.readUnknownField;
@@ -1804,6 +1817,9 @@ class AiNoiseRequest$Type extends MessageType<AiNoiseRequest> {
         /* bool enabled = 2; */
         if (message.enabled !== false)
             writer.tag(2, WireType.Varint).bool(message.enabled);
+        /* float level = 3; */
+        if (message.level !== 0)
+            writer.tag(3, WireType.Bit32).float(message.level);
         let u = options.writeUnknownFields;
         if (u !== false)
             (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
@@ -2201,7 +2217,8 @@ class ChannelConfigState$Type extends MessageType<ChannelConfigState> {
             { no: 5, name: "eq_bands", kind: "scalar", repeat: 1 /*RepeatType.PACKED*/, T: 2 /*ScalarType.FLOAT*/ },
             { no: 6, name: "noise_cancellation", kind: "scalar", T: 8 /*ScalarType.BOOL*/ },
             { no: 7, name: "noise_gate", kind: "message", T: () => NoiseGateConfig },
-            { no: 8, name: "compressor", kind: "message", T: () => CompressorConfig }
+            { no: 8, name: "compressor", kind: "message", T: () => CompressorConfig },
+            { no: 9, name: "ai_noise_level", kind: "scalar", T: 2 /*ScalarType.FLOAT*/ }
         ]);
     }
     create(value?: PartialMessage<ChannelConfigState>): ChannelConfigState {
@@ -2212,6 +2229,7 @@ class ChannelConfigState$Type extends MessageType<ChannelConfigState> {
         message.routeDevice = "";
         message.eqBands = [];
         message.noiseCancellation = false;
+        message.aiNoiseLevel = 0;
         if (value !== undefined)
             reflectionMergePartial<ChannelConfigState>(this, message, value);
         return message;
@@ -2248,6 +2266,9 @@ class ChannelConfigState$Type extends MessageType<ChannelConfigState> {
                     break;
                 case /* routune.CompressorConfig compressor */ 8:
                     message.compressor = CompressorConfig.internalBinaryRead(reader, reader.uint32(), options, message.compressor);
+                    break;
+                case /* float ai_noise_level */ 9:
+                    message.aiNoiseLevel = reader.float();
                     break;
                 default:
                     let u = options.readUnknownField;
@@ -2289,6 +2310,9 @@ class ChannelConfigState$Type extends MessageType<ChannelConfigState> {
         /* routune.CompressorConfig compressor = 8; */
         if (message.compressor)
             CompressorConfig.internalBinaryWrite(message.compressor, writer.tag(8, WireType.LengthDelimited).fork(), options).join();
+        /* float ai_noise_level = 9; */
+        if (message.aiNoiseLevel !== 0)
+            writer.tag(9, WireType.Bit32).float(message.aiNoiseLevel);
         let u = options.writeUnknownFields;
         if (u !== false)
             (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
@@ -2359,6 +2383,7 @@ export const RoutuneControl = new ServiceType("routune.RoutuneControl", [
     { name: "GetActiveApplications", options: {}, I: Empty, O: AppList },
     { name: "RouteApplication", options: {}, I: AppRouteRequest, O: Empty },
     { name: "ToggleAiNoise", options: {}, I: AiNoiseRequest, O: Empty },
+    { name: "SetAiNoise", options: {}, I: AiNoiseRequest, O: Empty },
     { name: "SetNoiseGate", options: {}, I: NoiseGateRequest, O: Empty },
     { name: "SetCompressor", options: {}, I: CompressorRequest, O: Empty },
     { name: "SetChannelVolume", options: {}, I: ChannelVolumeRequest, O: Empty },

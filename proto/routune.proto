@@ -12,6 +12,7 @@ service RoutuneControl {
   rpc GetActiveApplications (Empty) returns (AppList);
   rpc RouteApplication (AppRouteRequest) returns (Empty);
   rpc ToggleAiNoise (AiNoiseRequest) returns (Empty);
+  rpc SetAiNoise (AiNoiseRequest) returns (Empty);
   rpc SetNoiseGate (NoiseGateRequest) returns (Empty);
   rpc SetCompressor (CompressorRequest) returns (Empty);
   rpc SetChannelVolume (ChannelVolumeRequest) returns (Empty);
@@ -148,6 +149,7 @@ message AppRouteRequest {
 message AiNoiseRequest {
   AudioChannel channel = 1;
   bool enabled = 2;
+  float level = 3;
 }
 
 message NoiseGateConfig {
@@ -195,6 +197,7 @@ message ChannelConfigState {
   bool noise_cancellation = 6;
   NoiseGateConfig noise_gate = 7;
   CompressorConfig compressor = 8;
+  float ai_noise_level = 9;
 }
 
 message DaemonConfigResponse {

@@ -68,6 +68,10 @@ export interface IRoutuneControlClient {
      */
     toggleAiNoise(input: AiNoiseRequest, options?: RpcOptions): UnaryCall<AiNoiseRequest, Empty>;
     /**
+     * @generated from protobuf rpc: SetAiNoise
+     */
+    setAiNoise(input: AiNoiseRequest, options?: RpcOptions): UnaryCall<AiNoiseRequest, Empty>;
+    /**
      * @generated from protobuf rpc: SetNoiseGate
      */
     setNoiseGate(input: NoiseGateRequest, options?: RpcOptions): UnaryCall<NoiseGateRequest, Empty>;
@@ -169,52 +173,59 @@ export class RoutuneControlClient implements IRoutuneControlClient, ServiceInfo 
         return stackIntercept<AiNoiseRequest, Empty>("unary", this._transport, method, opt, input);
     }
     /**
+     * @generated from protobuf rpc: SetAiNoise
+     */
+    setAiNoise(input: AiNoiseRequest, options?: RpcOptions): UnaryCall<AiNoiseRequest, Empty> {
+        const method = this.methods[9], opt = this._transport.mergeOptions(options);
+        return stackIntercept<AiNoiseRequest, Empty>("unary", this._transport, method, opt, input);
+    }
+    /**
      * @generated from protobuf rpc: SetNoiseGate
      */
     setNoiseGate(input: NoiseGateRequest, options?: RpcOptions): UnaryCall<NoiseGateRequest, Empty> {
-        const method = this.methods[9], opt = this._transport.mergeOptions(options);
+        const method = this.methods[10], opt = this._transport.mergeOptions(options);
         return stackIntercept<NoiseGateRequest, Empty>("unary", this._transport, method, opt, input);
     }
     /**
      * @generated from protobuf rpc: SetCompressor
      */
     setCompressor(input: CompressorRequest, options?: RpcOptions): UnaryCall<CompressorRequest, Empty> {
-        const method = this.methods[10], opt = this._transport.mergeOptions(options);
+        const method = this.methods[11], opt = this._transport.mergeOptions(options);
         return stackIntercept<CompressorRequest, Empty>("unary", this._transport, method, opt, input);
     }
     /**
      * @generated from protobuf rpc: SetChannelVolume
      */
     setChannelVolume(input: ChannelVolumeRequest, options?: RpcOptions): UnaryCall<ChannelVolumeRequest, Empty> {
-        const method = this.methods[11], opt = this._transport.mergeOptions(options);
+        const method = this.methods[12], opt = this._transport.mergeOptions(options);
         return stackIntercept<ChannelVolumeRequest, Empty>("unary", this._transport, method, opt, input);
     }
     /**
      * @generated from protobuf rpc: SetChannelMute
      */
     setChannelMute(input: ChannelMuteRequest, options?: RpcOptions): UnaryCall<ChannelMuteRequest, Empty> {
-        const method = this.methods[12], opt = this._transport.mergeOptions(options);
+        const method = this.methods[13], opt = this._transport.mergeOptions(options);
         return stackIntercept<ChannelMuteRequest, Empty>("unary", this._transport, method, opt, input);
     }
     /**
      * @generated from protobuf rpc: GetDaemonConfig
      */
     getDaemonConfig(input: Empty, options?: RpcOptions): UnaryCall<Empty, DaemonConfigResponse> {
-        const method = this.methods[13], opt = this._transport.mergeOptions(options);
+        const method = this.methods[14], opt = this._transport.mergeOptions(options);
         return stackIntercept<Empty, DaemonConfigResponse>("unary", this._transport, method, opt, input);
     }
     /**
      * @generated from protobuf rpc: SetMicTest
      */
     setMicTest(input: MicTestRequest, options?: RpcOptions): UnaryCall<MicTestRequest, MicTestResponse> {
-        const method = this.methods[14], opt = this._transport.mergeOptions(options);
+        const method = this.methods[15], opt = this._transport.mergeOptions(options);
         return stackIntercept<MicTestRequest, MicTestResponse>("unary", this._transport, method, opt, input);
     }
     /**
      * @generated from protobuf rpc: GetMicTest
      */
     getMicTest(input: Empty, options?: RpcOptions): UnaryCall<Empty, MicTestResponse> {
-        const method = this.methods[15], opt = this._transport.mergeOptions(options);
+        const method = this.methods[16], opt = this._transport.mergeOptions(options);
         return stackIntercept<Empty, MicTestResponse>("unary", this._transport, method, opt, input);
     }
 }
