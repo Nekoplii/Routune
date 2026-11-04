@@ -57,6 +57,7 @@ interface AudioStoreState {
 
   // AI Noise Suppression (RNNoise)
   channelNoiseEnabled: Record<number, boolean>;
+  aiNoiseLevel: number;
   isTogglingAiNoise: Record<number, boolean>;
 
   // Mic Dynamics: Noise Gate & Compressor
@@ -90,6 +91,7 @@ interface AudioStoreState {
   setEqBandGain: (channel: AudioChannel, bandIndex: number, gainDb: number) => void;
   resetChannelEq: (channel: AudioChannel) => void;
   toggleAiNoise: (channel: AudioChannel, enabled: boolean) => Promise<boolean>;
+  setAiNoiseLevel: (channel: AudioChannel, level: number) => Promise<boolean>;
   setNoiseGate: (params: Partial<NoiseGateState>) => Promise<boolean>;
   setCompressor: (params: Partial<CompressorState>) => Promise<boolean>;
   setActiveView: (view: NavigationView) => void;
@@ -170,6 +172,7 @@ const INITIAL_APPS: AppStream[] = [
 const volumeDebounceTimers: Record<number, ReturnType<typeof setTimeout>> = {};
 let noiseGateDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 let compressorDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+let aiNoiseDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 export const DEFAULT_NOISE_GATE: NoiseGateState = {
   enabled: false,
@@ -192,6 +195,7 @@ interface CachedConfig {
   channelMuted: Record<number, boolean>;
   channelRoutings: Record<number, string>;
   channelNoiseEnabled: Record<number, boolean>;
+  aiNoiseLevel?: number;
   eqBands: Record<number, number[]>;
   noiseGate?: NoiseGateState;
   compressor?: CompressorState;
@@ -316,6 +320,7 @@ export const useAudioStore = create<AudioStoreState>((set, get) => ({
     [AudioChannel.MIC]: false,
     ...initialCached.channelNoiseEnabled,
   },
+  aiNoiseLevel: initialCached.aiNoiseLevel ?? 1.0,
   isTogglingAiNoise: {},
 
   noiseGate: initialCached.noiseGate ?? DEFAULT_NOISE_GATE,
@@ -459,6 +464,7 @@ export const useAudioStore = create<AudioStoreState>((set, get) => ({
       const nextRoutings: Record<number, string> = {};
       const nextEqBands: Record<number, number[]> = {};
       const nextNoise: Record<number, boolean> = {};
+      let nextAiNoiseLevel: number | undefined;
       let nextNoiseGate: NoiseGateState | undefined;
       let nextCompressor: CompressorState | undefined;
 
@@ -473,6 +479,9 @@ export const useAudioStore = create<AudioStoreState>((set, get) => ({
           nextEqBands[ch] = [...chState.eqBands];
         }
         nextNoise[ch] = chState.noiseCancellation;
+        if (chState.aiNoiseLevel !== undefined && chState.aiNoiseLevel > 0) {
+          nextAiNoiseLevel = chState.aiNoiseLevel;
+        }
 
         if (ch === AudioChannel.MIC) {
           if (chState.noiseGate) {
@@ -502,6 +511,7 @@ export const useAudioStore = create<AudioStoreState>((set, get) => ({
         channelRoutings: { ...s.channelRoutings, ...nextRoutings },
         eqBands: { ...s.eqBands, ...nextEqBands },
         channelNoiseEnabled: { ...s.channelNoiseEnabled, ...nextNoise },
+        ...(nextAiNoiseLevel !== undefined ? { aiNoiseLevel: nextAiNoiseLevel } : {}),
         ...(nextNoiseGate ? { noiseGate: nextNoiseGate } : {}),
         ...(nextCompressor ? { compressor: nextCompressor } : {}),
       }));
@@ -512,6 +522,7 @@ export const useAudioStore = create<AudioStoreState>((set, get) => ({
         channelRoutings: nextRoutings,
         eqBands: nextEqBands,
         channelNoiseEnabled: nextNoise,
+        ...(nextAiNoiseLevel !== undefined ? { aiNoiseLevel: nextAiNoiseLevel } : {}),
         ...(nextNoiseGate ? { noiseGate: nextNoiseGate } : {}),
         ...(nextCompressor ? { compressor: nextCompressor } : {}),
       });
@@ -653,6 +664,7 @@ export const useAudioStore = create<AudioStoreState>((set, get) => ({
 
   toggleAiNoise: async (channel: AudioChannel, enabled: boolean) => {
     const prevEnabled = useAudioStore.getState().channelNoiseEnabled[channel] ?? false;
+    const currentLevel = useAudioStore.getState().aiNoiseLevel ?? 1.0;
     // Optimistic update
     set((s) => {
       const nextNoise = { ...s.channelNoiseEnabled, [channel]: enabled };
@@ -664,7 +676,7 @@ export const useAudioStore = create<AudioStoreState>((set, get) => ({
     });
 
     try {
-      const call = routuneClient.toggleAiNoise({ channel, enabled });
+      const call = routuneClient.toggleAiNoise({ channel, enabled, level: currentLevel });
       await call.response;
       set((s) => ({
         isTogglingAiNoise: { ...s.isTogglingAiNoise, [channel]: false },
@@ -683,6 +695,33 @@ export const useAudioStore = create<AudioStoreState>((set, get) => ({
       });
       return false;
     }
+  },
+
+  setAiNoiseLevel: async (channel: AudioChannel, level: number) => {
+    const clamped = Math.max(0, Math.min(1, level));
+    set({ aiNoiseLevel: clamped });
+    saveLocalConfig({ aiNoiseLevel: clamped });
+
+    if (aiNoiseDebounceTimer) {
+      clearTimeout(aiNoiseDebounceTimer);
+    }
+
+    aiNoiseDebounceTimer = setTimeout(async () => {
+      aiNoiseDebounceTimer = null;
+      try {
+        const isEnabled = useAudioStore.getState().channelNoiseEnabled[channel] ?? false;
+        const call = routuneClient.setAiNoise({
+          channel,
+          enabled: isEnabled,
+          level: clamped,
+        });
+        await call.response;
+      } catch (err: unknown) {
+        console.warn(`Failed to set AI noise level for channel ${channel}:`, err);
+      }
+    }, 150);
+
+    return true;
   },
 
   setNoiseGate: async (params: Partial<NoiseGateState>) => {
