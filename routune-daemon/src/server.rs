@@ -105,6 +105,23 @@ pub trait TelemetryMetricsProvider: Send + Sync {
     ) -> Result<(), &'static str> {
         Ok(())
     }
+    fn set_spatial_audio(
+        &self,
+        _channel: routune_core::graph::VirtualChannel,
+        _enabled: bool,
+        _mode: routune_core::spatial::SpatialAudioMode,
+        _strength: f32,
+    ) -> Result<(), &'static str> {
+        Ok(())
+    }
+    fn set_volume_boost(
+        &self,
+        _channel: routune_core::graph::VirtualChannel,
+        _enabled: bool,
+        _boost_db: f32,
+    ) -> Result<(), &'static str> {
+        Ok(())
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -204,6 +221,25 @@ impl TelemetryMetricsProvider for crate::pipewire_bridge::PipeWireBridgeService 
         makeup_gain_db: f32,
     ) -> Result<(), &'static str> {
         self.set_compressor(channel, enabled, threshold_db, ratio, attack_ms, release_ms, makeup_gain_db)
+    }
+
+    fn set_spatial_audio(
+        &self,
+        channel: routune_core::graph::VirtualChannel,
+        enabled: bool,
+        mode: routune_core::spatial::SpatialAudioMode,
+        strength: f32,
+    ) -> Result<(), &'static str> {
+        self.set_spatial_audio(channel, enabled, mode, strength)
+    }
+
+    fn set_volume_boost(
+        &self,
+        channel: routune_core::graph::VirtualChannel,
+        enabled: bool,
+        boost_db: f32,
+    ) -> Result<(), &'static str> {
+        self.set_volume_boost(channel, enabled, boost_db)
     }
 }
 
@@ -575,6 +611,79 @@ impl proto::routune_control_server::RoutuneControl for ControlServiceImpl {
         Ok(Response::new(proto::Empty {}))
     }
 
+    async fn set_spatial_audio(
+        &self,
+        request: Request<proto::SpatialAudioRequest>,
+    ) -> Result<Response<proto::Empty>, Status> {
+        let req = request.into_inner();
+        let virtual_channel = match proto::AudioChannel::try_from(req.channel) {
+            Ok(proto::AudioChannel::Game) => routune_core::graph::VirtualChannel::Game,
+            Ok(proto::AudioChannel::Media) => routune_core::graph::VirtualChannel::Media,
+            Ok(proto::AudioChannel::Aux) => routune_core::graph::VirtualChannel::Aux,
+            _ => return Ok(Response::new(proto::Empty {})),
+        };
+
+        let cfg = req.config.unwrap_or_default();
+        let mode = match proto::SpatialAudioMode::try_from(cfg.mode) {
+            Ok(proto::SpatialAudioMode::Speaker) => routune_core::spatial::SpatialAudioMode::Speaker,
+            _ => routune_core::spatial::SpatialAudioMode::Headphone,
+        };
+        let strength = cfg.strength.clamp(0.0, 1.0);
+
+        if let Some(ref provider) = self.provider {
+            let _ = provider.set_spatial_audio(virtual_channel, cfg.enabled, mode, strength);
+        }
+
+        if let Some(ref config_manager) = self.config_manager {
+            config_manager
+                .set_spatial_audio(
+                    virtual_channel,
+                    routune_core::config::SpatialAudioConfig {
+                        enabled: cfg.enabled,
+                        mode,
+                        strength,
+                    },
+                )
+                .await;
+        }
+
+        Ok(Response::new(proto::Empty {}))
+    }
+
+    async fn set_volume_boost(
+        &self,
+        request: Request<proto::VolumeBoostRequest>,
+    ) -> Result<Response<proto::Empty>, Status> {
+        let req = request.into_inner();
+        let virtual_channel = match proto::AudioChannel::try_from(req.channel) {
+            Ok(proto::AudioChannel::Game) => routune_core::graph::VirtualChannel::Game,
+            Ok(proto::AudioChannel::Media) => routune_core::graph::VirtualChannel::Media,
+            Ok(proto::AudioChannel::Aux) => routune_core::graph::VirtualChannel::Aux,
+            _ => return Ok(Response::new(proto::Empty {})),
+        };
+
+        let cfg = req.config.unwrap_or_default();
+        let boost_db = cfg.boost_db.clamp(0.0, 12.0);
+
+        if let Some(ref provider) = self.provider {
+            let _ = provider.set_volume_boost(virtual_channel, cfg.enabled, boost_db);
+        }
+
+        if let Some(ref config_manager) = self.config_manager {
+            config_manager
+                .set_volume_boost(
+                    virtual_channel,
+                    routune_core::config::VolumeBoostConfig {
+                        enabled: cfg.enabled,
+                        boost_db,
+                    },
+                )
+                .await;
+        }
+
+        Ok(Response::new(proto::Empty {}))
+    }
+
     async fn get_daemon_config(
         &self,
         _request: Request<proto::Empty>,
@@ -625,6 +734,33 @@ impl proto::routune_control_server::RoutuneControl for ControlServiceImpl {
                 (None, None)
             };
 
+            let (spatial_audio, volume_boost) = match core_ch {
+                routune_core::graph::VirtualChannel::Game
+                | routune_core::graph::VirtualChannel::Media
+                | routune_core::graph::VirtualChannel::Aux => {
+                    let s = cfg.get_spatial_audio(core_ch);
+                    let v = cfg.get_volume_boost(core_ch);
+                    let s_proto = s.map(|cfg| proto::SpatialAudioConfig {
+                        enabled: cfg.enabled,
+                        mode: match cfg.mode {
+                            routune_core::spatial::SpatialAudioMode::Speaker => {
+                                proto::SpatialAudioMode::Speaker as i32
+                            }
+                            routune_core::spatial::SpatialAudioMode::Headphone => {
+                                proto::SpatialAudioMode::Headphone as i32
+                            }
+                        },
+                        strength: cfg.strength,
+                    });
+                    let v_proto = v.map(|cfg| proto::VolumeBoostConfig {
+                        enabled: cfg.enabled,
+                        boost_db: cfg.boost_db,
+                    });
+                    (s_proto, v_proto)
+                }
+                _ => (None, None),
+            };
+
             channel_states.push(proto::ChannelConfigState {
                 channel: proto_ch as i32,
                 volume_db,
@@ -635,6 +771,8 @@ impl proto::routune_control_server::RoutuneControl for ControlServiceImpl {
                 noise_gate,
                 compressor,
                 ai_noise_level: cfg.get_noise_level(),
+                spatial_audio,
+                volume_boost,
             });
         }
 
@@ -1488,5 +1626,123 @@ mod tests {
 
         let get_res = service.get_mic_test(tonic::Request::new(proto::Empty {})).await.unwrap().into_inner();
         assert!(!get_res.enabled);
+    }
+
+    #[tokio::test]
+    async fn test_spatial_audio_and_volume_boost_rpc_and_persistence() {
+        use proto::routune_control_server::RoutuneControl;
+        use std::time::Duration;
+
+        let temp_dir = std::env::temp_dir().join("routune_spatial_test");
+        let cfg_path = temp_dir.join("config.json");
+        let _ = std::fs::remove_file(&cfg_path);
+
+        let cfg_mgr = Arc::new(crate::config::ConfigManager::with_path(cfg_path.clone()).unwrap());
+        let is_active = Arc::new(AtomicBool::new(false));
+        let (tx, _) = broadcast::channel(16);
+        let (router, _) = crate::audio::ChannelRouter::new();
+        let router = Arc::new(tokio::sync::Mutex::new(router));
+
+        struct MockSpatialProvider {
+            last_spatial: std::sync::Mutex<Option<(routune_core::graph::VirtualChannel, bool, routune_core::spatial::SpatialAudioMode, f32)>>,
+            last_boost: std::sync::Mutex<Option<(routune_core::graph::VirtualChannel, bool, f32)>>,
+        }
+
+        impl TelemetryMetricsProvider for MockSpatialProvider {
+            fn get_sink_metrics(&self) -> Vec<proto::SinkMetric> { vec![] }
+            fn get_topology(&self) -> Option<proto::GraphTopology> { None }
+            fn get_master_metrics(&self) -> Option<(f32, f32)> { None }
+            fn get_channel_metrics(&self) -> Vec<proto::ChannelVolumeMetric> { vec![] }
+            fn is_active(&self) -> bool { true }
+            fn set_spatial_audio(
+                &self,
+                channel: routune_core::graph::VirtualChannel,
+                enabled: bool,
+                mode: routune_core::spatial::SpatialAudioMode,
+                strength: f32,
+            ) -> Result<(), &'static str> {
+                *self.last_spatial.lock().unwrap() = Some((channel, enabled, mode, strength));
+                Ok(())
+            }
+            fn set_volume_boost(
+                &self,
+                channel: routune_core::graph::VirtualChannel,
+                enabled: bool,
+                boost_db: f32,
+            ) -> Result<(), &'static str> {
+                *self.last_boost.lock().unwrap() = Some((channel, enabled, boost_db));
+                Ok(())
+            }
+        }
+
+        let mock = Arc::new(MockSpatialProvider {
+            last_spatial: std::sync::Mutex::new(None),
+            last_boost: std::sync::Mutex::new(None),
+        });
+
+        let service = ControlServiceImpl::new_with_config(
+            is_active,
+            tx,
+            Some(mock.clone()),
+            router,
+            Some(cfg_mgr.clone()),
+        );
+
+        // 1. SetSpatialAudio for Game (Headphone mode)
+        let s_req = tonic::Request::new(proto::SpatialAudioRequest {
+            channel: proto::AudioChannel::Game as i32,
+            config: Some(proto::SpatialAudioConfig {
+                enabled: true,
+                mode: proto::SpatialAudioMode::Headphone as i32,
+                strength: 0.85,
+            }),
+        });
+        let res = service.set_spatial_audio(s_req).await;
+        assert!(res.is_ok());
+
+        let (ch, en, mode, strg) = mock.last_spatial.lock().unwrap().take().unwrap();
+        assert_eq!(ch, routune_core::graph::VirtualChannel::Game);
+        assert!(en);
+        assert_eq!(mode, routune_core::spatial::SpatialAudioMode::Headphone);
+        assert!((strg - 0.85).abs() < 0.001);
+
+        // 2. SetVolumeBoost for Game
+        let b_req = tonic::Request::new(proto::VolumeBoostRequest {
+            channel: proto::AudioChannel::Game as i32,
+            config: Some(proto::VolumeBoostConfig {
+                enabled: true,
+                boost_db: 7.5,
+            }),
+        });
+        let res = service.set_volume_boost(b_req).await;
+        assert!(res.is_ok());
+
+        let (ch, en, b_db) = mock.last_boost.lock().unwrap().take().unwrap();
+        assert_eq!(ch, routune_core::graph::VirtualChannel::Game);
+        assert!(en);
+        assert!((b_db - 7.5).abs() < 0.001);
+
+        // 3. Test persistence
+        tokio::time::sleep(Duration::from_millis(250)).await;
+        let saved = routune_core::config::RoutuneConfig::load_or_default(&cfg_path);
+        let s_saved = saved.get_spatial_audio(routune_core::graph::VirtualChannel::Game).unwrap();
+        assert!(s_saved.enabled);
+        assert_eq!(s_saved.mode, routune_core::spatial::SpatialAudioMode::Headphone);
+        assert!((s_saved.strength - 0.85).abs() < 0.001);
+
+        let b_saved = saved.get_volume_boost(routune_core::graph::VirtualChannel::Game).unwrap();
+        assert!(b_saved.enabled);
+        assert!((b_saved.boost_db - 7.5).abs() < 0.001);
+
+        // 4. Test GetDaemonConfig returns spatial & boost for Game
+        let daemon_cfg = service.get_daemon_config(tonic::Request::new(proto::Empty {})).await.unwrap().into_inner();
+        let game_ch = daemon_cfg.channels.into_iter().find(|c| c.channel == proto::AudioChannel::Game as i32).unwrap();
+        assert!(game_ch.spatial_audio.is_some());
+        assert!(game_ch.spatial_audio.unwrap().enabled);
+        assert!(game_ch.volume_boost.is_some());
+        assert!(game_ch.volume_boost.unwrap().enabled);
+
+        let _ = std::fs::remove_file(&cfg_path);
+        let _ = std::fs::remove_dir(&temp_dir);
     }
 }

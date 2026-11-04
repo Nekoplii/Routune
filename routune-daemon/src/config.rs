@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 use anyhow::Result;
-use routune_core::config::RoutuneConfig;
+use routune_core::config::{RoutuneConfig, SpatialAudioConfig, VolumeBoostConfig};
 use routune_core::graph::VirtualChannel;
 use tokio::sync::{mpsc, Mutex};
 use tracing::{debug, error, info};
@@ -158,6 +158,22 @@ impl ConfigManager {
         {
             let mut guard = self.config.lock().await;
             guard.set_compressor(enabled, threshold_db, ratio, attack_ms, release_ms, makeup_gain_db);
+        }
+        let _ = self.save_tx.try_send(());
+    }
+
+    pub async fn set_spatial_audio(&self, channel: VirtualChannel, config: SpatialAudioConfig) {
+        {
+            let mut guard = self.config.lock().await;
+            guard.set_spatial_audio(channel, config);
+        }
+        let _ = self.save_tx.try_send(());
+    }
+
+    pub async fn set_volume_boost(&self, channel: VirtualChannel, config: VolumeBoostConfig) {
+        {
+            let mut guard = self.config.lock().await;
+            guard.set_volume_boost(channel, config);
         }
         let _ = self.save_tx.try_send(());
     }

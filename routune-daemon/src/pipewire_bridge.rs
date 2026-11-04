@@ -12,6 +12,7 @@ use routune_core::graph::{
     calculate_metrics, AudioEngineGraph, AudioNode, DspBypassNode, EqNode, GraphCommand,
     GraphController, PhysicalOutputNode, ResamplerNode, VirtualChannel, VirtualInputNode,
 };
+use routune_core::spatial::{SpatialAudioMode, SpatialAudioNode, VolumeBoostNode};
 
 use crate::audio::{AudioRingBuffer, ChannelPusher};
 use crate::server::proto::{
@@ -88,6 +89,8 @@ struct VirtualSinkUserData {
     is_active: Arc<AtomicBool>,
     noise_enabled: Option<Arc<AtomicBool>>,
     ai_noise_node: Option<AiNoiseNode>,
+    spatial_node: Option<SpatialAudioNode>,
+    volume_boost_node: Option<VolumeBoostNode>,
     eq_node: EqNode,
     cmd_rx: crossbeam_channel::Receiver<GraphCommand>,
     scratch_buf: Box<[f32; SCRATCH_BUFFER_SAMPLES]>,
@@ -211,19 +214,56 @@ impl PipeWireBridgeService {
                     eq_node.set_band_gain(b, g);
                 }
             }
+            controller.add_node(Box::new(eq_node)).map_err(|e| anyhow::anyhow!(e))?;
+            controller.connect(prev_id, eq_id).map_err(|e| anyhow::anyhow!(e))?;
+
+            let mut last_id = eq_id;
+
+            if matches!(v_ch, VirtualChannel::Game | VirtualChannel::Media | VirtualChannel::Aux) {
+                let spatial_id = match v_ch {
+                    VirtualChannel::Game => "game-spatial",
+                    VirtualChannel::Media => "media-spatial",
+                    VirtualChannel::Aux => "aux-spatial",
+                    _ => unreachable!(),
+                };
+                let boost_id = match v_ch {
+                    VirtualChannel::Game => "game-boost",
+                    VirtualChannel::Media => "media-boost",
+                    VirtualChannel::Aux => "aux-boost",
+                    _ => unreachable!(),
+                };
+                let mut spatial_node = SpatialAudioNode::new(spatial_id, format!("{v_ch:?} Spatial Audio"));
+                let mut boost_node = VolumeBoostNode::new(boost_id, format!("{v_ch:?} Volume Boost"));
+                if let Some(cfg) = config {
+                    if let Some(s) = cfg.get_spatial_audio(v_ch) {
+                        spatial_node.set_enabled(s.enabled);
+                        spatial_node.set_mode(s.mode);
+                        spatial_node.set_strength(s.strength);
+                    }
+                    if let Some(b) = cfg.get_volume_boost(v_ch) {
+                        boost_node.set_enabled(b.enabled);
+                        boost_node.set_boost_db(b.boost_db);
+                    }
+                }
+                controller.add_node(Box::new(spatial_node)).map_err(|e| anyhow::anyhow!(e))?;
+                controller.add_node(Box::new(boost_node)).map_err(|e| anyhow::anyhow!(e))?;
+
+                controller.connect(last_id, spatial_id).map_err(|e| anyhow::anyhow!(e))?;
+                controller.connect(spatial_id, boost_id).map_err(|e| anyhow::anyhow!(e))?;
+                last_id = boost_id;
+            }
+
             let resamp_node = ResamplerNode::new(resamp_id, resamp_name, 48000, 48000, 2, 256)
                 .map_err(|e| anyhow::anyhow!("Failed to create {resamp_name}: {:?}", e))?;
             let bypass_node = DspBypassNode::new(bypass_id, bypass_name);
             let target_device = config.map(|c| c.get_route(v_ch)).unwrap_or("unassigned");
             let out_node = PhysicalOutputNode::new(out_id, out_name, target_device);
 
-            controller.add_node(Box::new(eq_node)).map_err(|e| anyhow::anyhow!(e))?;
             controller.add_node(Box::new(resamp_node)).map_err(|e| anyhow::anyhow!(e))?;
             controller.add_node(Box::new(bypass_node)).map_err(|e| anyhow::anyhow!(e))?;
             controller.add_node(Box::new(out_node)).map_err(|e| anyhow::anyhow!(e))?;
 
-            controller.connect(prev_id, eq_id).map_err(|e| anyhow::anyhow!(e))?;
-            controller.connect(eq_id, resamp_id).map_err(|e| anyhow::anyhow!(e))?;
+            controller.connect(last_id, resamp_id).map_err(|e| anyhow::anyhow!(e))?;
             controller.connect(resamp_id, bypass_id).map_err(|e| anyhow::anyhow!(e))?;
             controller.connect(bypass_id, out_id).map_err(|e| anyhow::anyhow!(e))?;
         }
@@ -631,6 +671,26 @@ impl PipeWireBridgeService {
                         let init_m_gain = if init_m_vol <= -48.0 { 0.0f32 } else { 10.0f32.powf(init_m_vol / 20.0) };
                         let init_m_muted = thread_config.as_ref().map(|c| c.get_mute(VirtualChannel::Master)).unwrap_or(false);
 
+                        let (spatial_node, volume_boost_node) = match $v_ch {
+                            VirtualChannel::Game | VirtualChannel::Media | VirtualChannel::Aux => {
+                                let mut s_node = SpatialAudioNode::new(format!("{}-spatial", $name), format!("{} Spatial Audio", $eq_name));
+                                let mut b_node = VolumeBoostNode::new(format!("{}-boost", $name), format!("{} Volume Boost", $eq_name));
+                                if let Some(ref cfg) = thread_config {
+                                    if let Some(s) = cfg.get_spatial_audio($v_ch) {
+                                        s_node.set_enabled(s.enabled);
+                                        s_node.set_mode(s.mode);
+                                        s_node.set_strength(s.strength);
+                                    }
+                                    if let Some(b) = cfg.get_volume_boost($v_ch) {
+                                        b_node.set_enabled(b.enabled);
+                                        b_node.set_boost_db(b.boost_db);
+                                    }
+                                }
+                                (Some(s_node), Some(b_node))
+                            }
+                            _ => (None, None),
+                        };
+
                         let user_data = VirtualSinkUserData {
                             ring_buf: $ring_buf,
                             peak_db: $peak,
@@ -638,6 +698,8 @@ impl PipeWireBridgeService {
                             is_active: $active,
                             noise_enabled: noise_enabled_opt,
                             ai_noise_node,
+                            spatial_node,
+                            volume_boost_node,
                             eq_node,
                             cmd_rx: $eq_rx,
                             scratch_buf: Box::new([0.0f32; SCRATCH_BUFFER_SAMPLES]),
@@ -666,6 +728,23 @@ impl PipeWireBridgeService {
                                         GraphCommand::SetAiNoiseLevel(_channel, level) => {
                                             if let Some(ref mut node) = data.ai_noise_node {
                                                 node.set_level(level);
+                                            }
+                                        }
+                                        GraphCommand::UpdateSpatialAudio { channel, enabled, mode, strength } => {
+                                            if channel == $v_ch {
+                                                if let Some(ref mut node) = data.spatial_node {
+                                                    node.set_enabled(enabled);
+                                                    node.set_mode(mode);
+                                                    node.set_strength(strength);
+                                                }
+                                            }
+                                        }
+                                        GraphCommand::UpdateVolumeBoost { channel, enabled, boost_db } => {
+                                            if channel == $v_ch {
+                                                if let Some(ref mut node) = data.volume_boost_node {
+                                                    node.set_enabled(enabled);
+                                                    node.set_boost_db(boost_db);
+                                                }
                                             }
                                         }
                                         GraphCommand::UpdateVolume(channel, volume_db) => {
@@ -727,6 +806,14 @@ impl PipeWireBridgeService {
                                                             data.scratch_buf_2[..len].copy_from_slice(&data.scratch_buf[..len]);
                                                             data.eq_node.process(&data.scratch_buf_2[..len], &mut data.scratch_buf[..len]);
                                                         }
+                                                        if let Some(ref mut spatial) = data.spatial_node {
+                                                            spatial.process(&data.scratch_buf[..len], &mut data.scratch_buf_2[..len]);
+                                                            data.scratch_buf[..len].copy_from_slice(&data.scratch_buf_2[..len]);
+                                                        }
+                                                        if let Some(ref mut boost) = data.volume_boost_node {
+                                                            boost.process(&data.scratch_buf[..len], &mut data.scratch_buf_2[..len]);
+                                                            data.scratch_buf[..len].copy_from_slice(&data.scratch_buf_2[..len]);
+                                                        }
 
                                                         let effective_gain = if data.muted || data.master_muted {
                                                             0.0f32
@@ -773,6 +860,14 @@ impl PipeWireBridgeService {
                                                             data.eq_node.process(&data.scratch_buf_2[..len], &mut data.scratch_buf[..len]);
                                                         } else {
                                                             data.eq_node.process(&floats[..len], &mut data.scratch_buf[..len]);
+                                                        }
+                                                        if let Some(ref mut spatial) = data.spatial_node {
+                                                            spatial.process(&data.scratch_buf[..len], &mut data.scratch_buf_2[..len]);
+                                                            data.scratch_buf[..len].copy_from_slice(&data.scratch_buf_2[..len]);
+                                                        }
+                                                        if let Some(ref mut boost) = data.volume_boost_node {
+                                                            boost.process(&data.scratch_buf[..len], &mut data.scratch_buf_2[..len]);
+                                                            data.scratch_buf[..len].copy_from_slice(&data.scratch_buf_2[..len]);
                                                         }
 
                                                         let effective_gain = if data.muted || data.master_muted {
@@ -1234,6 +1329,66 @@ impl PipeWireBridgeService {
         Ok(())
     }
 
+    pub fn set_spatial_audio(
+        &self,
+        channel: VirtualChannel,
+        enabled: bool,
+        mode: SpatialAudioMode,
+        strength: f32,
+    ) -> Result<(), &'static str> {
+        let cmd = GraphCommand::UpdateSpatialAudio {
+            channel,
+            enabled,
+            mode,
+            strength,
+        };
+        match channel {
+            VirtualChannel::Game => {
+                let _ = self.game_eq_tx.try_send(cmd);
+            }
+            VirtualChannel::Media => {
+                let _ = self.media_eq_tx.try_send(cmd);
+            }
+            VirtualChannel::Aux => {
+                let _ = self.aux_eq_tx.try_send(cmd);
+            }
+            _ => return Ok(()),
+        }
+        if let Ok(mut controller) = self.graph_controller.lock() {
+            let _ = controller.set_spatial_audio(channel, enabled, mode, strength);
+        }
+        Ok(())
+    }
+
+    pub fn set_volume_boost(
+        &self,
+        channel: VirtualChannel,
+        enabled: bool,
+        boost_db: f32,
+    ) -> Result<(), &'static str> {
+        let cmd = GraphCommand::UpdateVolumeBoost {
+            channel,
+            enabled,
+            boost_db,
+        };
+        match channel {
+            VirtualChannel::Game => {
+                let _ = self.game_eq_tx.try_send(cmd);
+            }
+            VirtualChannel::Media => {
+                let _ = self.media_eq_tx.try_send(cmd);
+            }
+            VirtualChannel::Aux => {
+                let _ = self.aux_eq_tx.try_send(cmd);
+            }
+            _ => return Ok(()),
+        }
+        if let Ok(mut controller) = self.graph_controller.lock() {
+            let _ = controller.set_volume_boost(channel, enabled, boost_db);
+        }
+        Ok(())
+    }
+
     pub fn get_sink_metrics(&self) -> Vec<SinkMetric> {
         vec![
             SinkMetric {
@@ -1352,7 +1507,7 @@ impl PipeWireBridgeService {
             .iter()
             .map(|info| {
                 let (peak, rms) = match info.id.as_str() {
-                    "routune-game" | "game-noise" | "game-eq" | "game-output" => (
+                    "routune-game" | "game-noise" | "game-eq" | "game-spatial" | "game-boost" | "game-output" => (
                         f32::from_bits(self.game_peak.load(Ordering::Relaxed)),
                         f32::from_bits(self.game_rms.load(Ordering::Relaxed)),
                     ),
@@ -1360,11 +1515,11 @@ impl PipeWireBridgeService {
                         f32::from_bits(self.chat_peak.load(Ordering::Relaxed)),
                         f32::from_bits(self.chat_rms.load(Ordering::Relaxed)),
                     ),
-                    "routune-media" | "media-noise" | "media-eq" | "media-output" => (
+                    "routune-media" | "media-noise" | "media-eq" | "media-spatial" | "media-boost" | "media-output" => (
                         f32::from_bits(self.media_peak.load(Ordering::Relaxed)),
                         f32::from_bits(self.media_rms.load(Ordering::Relaxed)),
                     ),
-                    "routune-aux" | "aux-noise" | "aux-eq" | "aux-output" => (
+                    "routune-aux" | "aux-noise" | "aux-eq" | "aux-spatial" | "aux-boost" | "aux-output" => (
                         f32::from_bits(self.aux_peak.load(Ordering::Relaxed)),
                         f32::from_bits(self.aux_rms.load(Ordering::Relaxed)),
                     ),
@@ -1535,8 +1690,8 @@ mod tests {
                 assert_eq!(channel_metrics[5].channel_name, "Mic");
 
                 let topology = service.get_topology();
-                assert_eq!(topology.nodes.len(), 27);
-                assert_eq!(topology.edges.len(), 22);
+                assert_eq!(topology.nodes.len(), 33);
+                assert_eq!(topology.edges.len(), 28);
 
                 let eq_res = service.update_eq(VirtualChannel::Game, 3, 5.0);
                 assert!(eq_res.is_ok());
