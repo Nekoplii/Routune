@@ -1,19 +1,24 @@
-# Routune Development Roadmap (Cross-Platform MVP)
+# Routune Roadmap
 
-## Phase 1: User-Mode Foundation (Completed)
+## Phase 1 — Foundation (done)
 
-- Cargo workspace scaffolding (`routune-daemon`, `routune-gui`, `routune-core`).
-- Lock-free telemetry and gRPC bridge.
-- Tauri GUI functional dashboard.
+- Cargo workspace (`routune-daemon`, `routune-gui`, `routune-core`)
+- gRPC IPC bridge with lock-free telemetry stream
+- Tauri GUI with mixer, routing, and DSP tuning views
 
-## Phase 2: Virtual Audio Routing (Current - Linux First)
+## Phase 2 — Virtual Audio Routing (current, Linux)
 
-- **Linux:** Implement PipeWire graph routing and virtual sinks. Validate node-based DSP architecture in user-space.
-- **Windows:** Implement Sysvad-based Virtual Audio Driver (Kernel-mode). End-user distribution will require Test Mode for the MVP.
-- **Mac:** CoreAudio virtual driver integration (TBD).
+- PipeWire node graph routing and virtual sinks
+- Per-application channel assignment via pw-cli
+- Node-based DSP architecture validated in user-space
 
-## Phase 3: Advanced DSP Pipeline
+## Phase 3 — DSP Pipeline
 
-- Parametric EQ via `biquad`.
-- Resampling via `rubato`.
-- AI Noise Cancellation (`nnnoiseless`).
+- 10-band parametric EQ (`biquad`)
+- Asynchronous resampling (`rubato`)
+- Noise suppression (`nnnoiseless`)
+
+## Phase 4 — Cross-Platform
+
+- **Windows:** Sysvad-based virtual audio driver (kernel-mode); Test Mode required for MVP distribution
+- **macOS:** CoreAudio virtual driver (TBD)
