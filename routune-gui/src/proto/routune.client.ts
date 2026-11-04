@@ -7,6 +7,8 @@ import { RoutuneControl } from "./routune";
 import type { MicTestResponse } from "./routune";
 import type { MicTestRequest } from "./routune";
 import type { DaemonConfigResponse } from "./routune";
+import type { VolumeBoostRequest } from "./routune";
+import type { SpatialAudioRequest } from "./routune";
 import type { ChannelMuteRequest } from "./routune";
 import type { ChannelVolumeRequest } from "./routune";
 import type { CompressorRequest } from "./routune";
@@ -87,6 +89,14 @@ export interface IRoutuneControlClient {
      * @generated from protobuf rpc: SetChannelMute
      */
     setChannelMute(input: ChannelMuteRequest, options?: RpcOptions): UnaryCall<ChannelMuteRequest, Empty>;
+    /**
+     * @generated from protobuf rpc: SetSpatialAudio
+     */
+    setSpatialAudio(input: SpatialAudioRequest, options?: RpcOptions): UnaryCall<SpatialAudioRequest, Empty>;
+    /**
+     * @generated from protobuf rpc: SetVolumeBoost
+     */
+    setVolumeBoost(input: VolumeBoostRequest, options?: RpcOptions): UnaryCall<VolumeBoostRequest, Empty>;
     /**
      * @generated from protobuf rpc: GetDaemonConfig
      */
@@ -208,24 +218,38 @@ export class RoutuneControlClient implements IRoutuneControlClient, ServiceInfo 
         return stackIntercept<ChannelMuteRequest, Empty>("unary", this._transport, method, opt, input);
     }
     /**
+     * @generated from protobuf rpc: SetSpatialAudio
+     */
+    setSpatialAudio(input: SpatialAudioRequest, options?: RpcOptions): UnaryCall<SpatialAudioRequest, Empty> {
+        const method = this.methods[14], opt = this._transport.mergeOptions(options);
+        return stackIntercept<SpatialAudioRequest, Empty>("unary", this._transport, method, opt, input);
+    }
+    /**
+     * @generated from protobuf rpc: SetVolumeBoost
+     */
+    setVolumeBoost(input: VolumeBoostRequest, options?: RpcOptions): UnaryCall<VolumeBoostRequest, Empty> {
+        const method = this.methods[15], opt = this._transport.mergeOptions(options);
+        return stackIntercept<VolumeBoostRequest, Empty>("unary", this._transport, method, opt, input);
+    }
+    /**
      * @generated from protobuf rpc: GetDaemonConfig
      */
     getDaemonConfig(input: Empty, options?: RpcOptions): UnaryCall<Empty, DaemonConfigResponse> {
-        const method = this.methods[14], opt = this._transport.mergeOptions(options);
+        const method = this.methods[16], opt = this._transport.mergeOptions(options);
         return stackIntercept<Empty, DaemonConfigResponse>("unary", this._transport, method, opt, input);
     }
     /**
      * @generated from protobuf rpc: SetMicTest
      */
     setMicTest(input: MicTestRequest, options?: RpcOptions): UnaryCall<MicTestRequest, MicTestResponse> {
-        const method = this.methods[15], opt = this._transport.mergeOptions(options);
+        const method = this.methods[17], opt = this._transport.mergeOptions(options);
         return stackIntercept<MicTestRequest, MicTestResponse>("unary", this._transport, method, opt, input);
     }
     /**
      * @generated from protobuf rpc: GetMicTest
      */
     getMicTest(input: Empty, options?: RpcOptions): UnaryCall<Empty, MicTestResponse> {
-        const method = this.methods[16], opt = this._transport.mergeOptions(options);
+        const method = this.methods[18], opt = this._transport.mergeOptions(options);
         return stackIntercept<Empty, MicTestResponse>("unary", this._transport, method, opt, input);
     }
 }

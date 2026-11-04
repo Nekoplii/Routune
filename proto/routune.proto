@@ -17,6 +17,8 @@ service RoutuneControl {
   rpc SetCompressor (CompressorRequest) returns (Empty);
   rpc SetChannelVolume (ChannelVolumeRequest) returns (Empty);
   rpc SetChannelMute (ChannelMuteRequest) returns (Empty);
+  rpc SetSpatialAudio (SpatialAudioRequest) returns (Empty);
+  rpc SetVolumeBoost (VolumeBoostRequest) returns (Empty);
   rpc GetDaemonConfig (Empty) returns (DaemonConfigResponse);
   rpc SetMicTest (MicTestRequest) returns (MicTestResponse);
   rpc GetMicTest (Empty) returns (MicTestResponse);
@@ -188,6 +190,32 @@ message ChannelMuteRequest {
   bool muted = 2;
 }
 
+enum SpatialAudioMode {
+  HEADPHONE = 0;
+  SPEAKER = 1;
+}
+
+message SpatialAudioConfig {
+  bool enabled = 1;
+  SpatialAudioMode mode = 2;
+  float strength = 3;
+}
+
+message VolumeBoostConfig {
+  bool enabled = 1;
+  float boost_db = 2;
+}
+
+message SpatialAudioRequest {
+  AudioChannel channel = 1;
+  SpatialAudioConfig config = 2;
+}
+
+message VolumeBoostRequest {
+  AudioChannel channel = 1;
+  VolumeBoostConfig config = 2;
+}
+
 message ChannelConfigState {
   AudioChannel channel = 1;
   float volume_db = 2;
@@ -198,6 +226,8 @@ message ChannelConfigState {
   NoiseGateConfig noise_gate = 7;
   CompressorConfig compressor = 8;
   float ai_noise_level = 9;
+  SpatialAudioConfig spatial_audio = 10;
+  VolumeBoostConfig volume_boost = 11;
 }
 
 message DaemonConfigResponse {

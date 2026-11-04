@@ -455,6 +455,62 @@ export interface ChannelMuteRequest {
     muted: boolean;
 }
 /**
+ * @generated from protobuf message routune.SpatialAudioConfig
+ */
+export interface SpatialAudioConfig {
+    /**
+     * @generated from protobuf field: bool enabled = 1
+     */
+    enabled: boolean;
+    /**
+     * @generated from protobuf field: routune.SpatialAudioMode mode = 2
+     */
+    mode: SpatialAudioMode;
+    /**
+     * @generated from protobuf field: float strength = 3
+     */
+    strength: number;
+}
+/**
+ * @generated from protobuf message routune.VolumeBoostConfig
+ */
+export interface VolumeBoostConfig {
+    /**
+     * @generated from protobuf field: bool enabled = 1
+     */
+    enabled: boolean;
+    /**
+     * @generated from protobuf field: float boost_db = 2
+     */
+    boostDb: number;
+}
+/**
+ * @generated from protobuf message routune.SpatialAudioRequest
+ */
+export interface SpatialAudioRequest {
+    /**
+     * @generated from protobuf field: routune.AudioChannel channel = 1
+     */
+    channel: AudioChannel;
+    /**
+     * @generated from protobuf field: routune.SpatialAudioConfig config = 2
+     */
+    config?: SpatialAudioConfig;
+}
+/**
+ * @generated from protobuf message routune.VolumeBoostRequest
+ */
+export interface VolumeBoostRequest {
+    /**
+     * @generated from protobuf field: routune.AudioChannel channel = 1
+     */
+    channel: AudioChannel;
+    /**
+     * @generated from protobuf field: routune.VolumeBoostConfig config = 2
+     */
+    config?: VolumeBoostConfig;
+}
+/**
  * @generated from protobuf message routune.ChannelConfigState
  */
 export interface ChannelConfigState {
@@ -494,6 +550,14 @@ export interface ChannelConfigState {
      * @generated from protobuf field: float ai_noise_level = 9
      */
     aiNoiseLevel: number;
+    /**
+     * @generated from protobuf field: routune.SpatialAudioConfig spatial_audio = 10
+     */
+    spatialAudio?: SpatialAudioConfig;
+    /**
+     * @generated from protobuf field: routune.VolumeBoostConfig volume_boost = 11
+     */
+    volumeBoost?: VolumeBoostConfig;
 }
 /**
  * @generated from protobuf message routune.DaemonConfigResponse
@@ -532,6 +596,19 @@ export enum AudioChannel {
      * @generated from protobuf enum value: MIC = 5;
      */
     MIC = 5
+}
+/**
+ * @generated from protobuf enum routune.SpatialAudioMode
+ */
+export enum SpatialAudioMode {
+    /**
+     * @generated from protobuf enum value: HEADPHONE = 0;
+     */
+    HEADPHONE = 0,
+    /**
+     * @generated from protobuf enum value: SPEAKER = 1;
+     */
+    SPEAKER = 1
 }
 // @generated message type with reflection information, may provide speed optimized methods
 class MicTestRequest$Type extends MessageType<MicTestRequest> {
@@ -2207,6 +2284,232 @@ class ChannelMuteRequest$Type extends MessageType<ChannelMuteRequest> {
  */
 export const ChannelMuteRequest = new ChannelMuteRequest$Type();
 // @generated message type with reflection information, may provide speed optimized methods
+class SpatialAudioConfig$Type extends MessageType<SpatialAudioConfig> {
+    constructor() {
+        super("routune.SpatialAudioConfig", [
+            { no: 1, name: "enabled", kind: "scalar", T: 8 /*ScalarType.BOOL*/ },
+            { no: 2, name: "mode", kind: "enum", T: () => ["routune.SpatialAudioMode", SpatialAudioMode] },
+            { no: 3, name: "strength", kind: "scalar", T: 2 /*ScalarType.FLOAT*/ }
+        ]);
+    }
+    create(value?: PartialMessage<SpatialAudioConfig>): SpatialAudioConfig {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.enabled = false;
+        message.mode = 0;
+        message.strength = 0;
+        if (value !== undefined)
+            reflectionMergePartial<SpatialAudioConfig>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: SpatialAudioConfig): SpatialAudioConfig {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* bool enabled */ 1:
+                    message.enabled = reader.bool();
+                    break;
+                case /* routune.SpatialAudioMode mode */ 2:
+                    message.mode = reader.int32();
+                    break;
+                case /* float strength */ 3:
+                    message.strength = reader.float();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: SpatialAudioConfig, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* bool enabled = 1; */
+        if (message.enabled !== false)
+            writer.tag(1, WireType.Varint).bool(message.enabled);
+        /* routune.SpatialAudioMode mode = 2; */
+        if (message.mode !== 0)
+            writer.tag(2, WireType.Varint).int32(message.mode);
+        /* float strength = 3; */
+        if (message.strength !== 0)
+            writer.tag(3, WireType.Bit32).float(message.strength);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message routune.SpatialAudioConfig
+ */
+export const SpatialAudioConfig = new SpatialAudioConfig$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class VolumeBoostConfig$Type extends MessageType<VolumeBoostConfig> {
+    constructor() {
+        super("routune.VolumeBoostConfig", [
+            { no: 1, name: "enabled", kind: "scalar", T: 8 /*ScalarType.BOOL*/ },
+            { no: 2, name: "boost_db", kind: "scalar", T: 2 /*ScalarType.FLOAT*/ }
+        ]);
+    }
+    create(value?: PartialMessage<VolumeBoostConfig>): VolumeBoostConfig {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.enabled = false;
+        message.boostDb = 0;
+        if (value !== undefined)
+            reflectionMergePartial<VolumeBoostConfig>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: VolumeBoostConfig): VolumeBoostConfig {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* bool enabled */ 1:
+                    message.enabled = reader.bool();
+                    break;
+                case /* float boost_db */ 2:
+                    message.boostDb = reader.float();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: VolumeBoostConfig, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* bool enabled = 1; */
+        if (message.enabled !== false)
+            writer.tag(1, WireType.Varint).bool(message.enabled);
+        /* float boost_db = 2; */
+        if (message.boostDb !== 0)
+            writer.tag(2, WireType.Bit32).float(message.boostDb);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message routune.VolumeBoostConfig
+ */
+export const VolumeBoostConfig = new VolumeBoostConfig$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class SpatialAudioRequest$Type extends MessageType<SpatialAudioRequest> {
+    constructor() {
+        super("routune.SpatialAudioRequest", [
+            { no: 1, name: "channel", kind: "enum", T: () => ["routune.AudioChannel", AudioChannel] },
+            { no: 2, name: "config", kind: "message", T: () => SpatialAudioConfig }
+        ]);
+    }
+    create(value?: PartialMessage<SpatialAudioRequest>): SpatialAudioRequest {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.channel = 0;
+        if (value !== undefined)
+            reflectionMergePartial<SpatialAudioRequest>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: SpatialAudioRequest): SpatialAudioRequest {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* routune.AudioChannel channel */ 1:
+                    message.channel = reader.int32();
+                    break;
+                case /* routune.SpatialAudioConfig config */ 2:
+                    message.config = SpatialAudioConfig.internalBinaryRead(reader, reader.uint32(), options, message.config);
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: SpatialAudioRequest, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* routune.AudioChannel channel = 1; */
+        if (message.channel !== 0)
+            writer.tag(1, WireType.Varint).int32(message.channel);
+        /* routune.SpatialAudioConfig config = 2; */
+        if (message.config)
+            SpatialAudioConfig.internalBinaryWrite(message.config, writer.tag(2, WireType.LengthDelimited).fork(), options).join();
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message routune.SpatialAudioRequest
+ */
+export const SpatialAudioRequest = new SpatialAudioRequest$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class VolumeBoostRequest$Type extends MessageType<VolumeBoostRequest> {
+    constructor() {
+        super("routune.VolumeBoostRequest", [
+            { no: 1, name: "channel", kind: "enum", T: () => ["routune.AudioChannel", AudioChannel] },
+            { no: 2, name: "config", kind: "message", T: () => VolumeBoostConfig }
+        ]);
+    }
+    create(value?: PartialMessage<VolumeBoostRequest>): VolumeBoostRequest {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.channel = 0;
+        if (value !== undefined)
+            reflectionMergePartial<VolumeBoostRequest>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: VolumeBoostRequest): VolumeBoostRequest {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* routune.AudioChannel channel */ 1:
+                    message.channel = reader.int32();
+                    break;
+                case /* routune.VolumeBoostConfig config */ 2:
+                    message.config = VolumeBoostConfig.internalBinaryRead(reader, reader.uint32(), options, message.config);
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: VolumeBoostRequest, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* routune.AudioChannel channel = 1; */
+        if (message.channel !== 0)
+            writer.tag(1, WireType.Varint).int32(message.channel);
+        /* routune.VolumeBoostConfig config = 2; */
+        if (message.config)
+            VolumeBoostConfig.internalBinaryWrite(message.config, writer.tag(2, WireType.LengthDelimited).fork(), options).join();
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message routune.VolumeBoostRequest
+ */
+export const VolumeBoostRequest = new VolumeBoostRequest$Type();
+// @generated message type with reflection information, may provide speed optimized methods
 class ChannelConfigState$Type extends MessageType<ChannelConfigState> {
     constructor() {
         super("routune.ChannelConfigState", [
@@ -2218,7 +2521,9 @@ class ChannelConfigState$Type extends MessageType<ChannelConfigState> {
             { no: 6, name: "noise_cancellation", kind: "scalar", T: 8 /*ScalarType.BOOL*/ },
             { no: 7, name: "noise_gate", kind: "message", T: () => NoiseGateConfig },
             { no: 8, name: "compressor", kind: "message", T: () => CompressorConfig },
-            { no: 9, name: "ai_noise_level", kind: "scalar", T: 2 /*ScalarType.FLOAT*/ }
+            { no: 9, name: "ai_noise_level", kind: "scalar", T: 2 /*ScalarType.FLOAT*/ },
+            { no: 10, name: "spatial_audio", kind: "message", T: () => SpatialAudioConfig },
+            { no: 11, name: "volume_boost", kind: "message", T: () => VolumeBoostConfig }
         ]);
     }
     create(value?: PartialMessage<ChannelConfigState>): ChannelConfigState {
@@ -2270,6 +2575,12 @@ class ChannelConfigState$Type extends MessageType<ChannelConfigState> {
                 case /* float ai_noise_level */ 9:
                     message.aiNoiseLevel = reader.float();
                     break;
+                case /* routune.SpatialAudioConfig spatial_audio */ 10:
+                    message.spatialAudio = SpatialAudioConfig.internalBinaryRead(reader, reader.uint32(), options, message.spatialAudio);
+                    break;
+                case /* routune.VolumeBoostConfig volume_boost */ 11:
+                    message.volumeBoost = VolumeBoostConfig.internalBinaryRead(reader, reader.uint32(), options, message.volumeBoost);
+                    break;
                 default:
                     let u = options.readUnknownField;
                     if (u === "throw")
@@ -2313,6 +2624,12 @@ class ChannelConfigState$Type extends MessageType<ChannelConfigState> {
         /* float ai_noise_level = 9; */
         if (message.aiNoiseLevel !== 0)
             writer.tag(9, WireType.Bit32).float(message.aiNoiseLevel);
+        /* routune.SpatialAudioConfig spatial_audio = 10; */
+        if (message.spatialAudio)
+            SpatialAudioConfig.internalBinaryWrite(message.spatialAudio, writer.tag(10, WireType.LengthDelimited).fork(), options).join();
+        /* routune.VolumeBoostConfig volume_boost = 11; */
+        if (message.volumeBoost)
+            VolumeBoostConfig.internalBinaryWrite(message.volumeBoost, writer.tag(11, WireType.LengthDelimited).fork(), options).join();
         let u = options.writeUnknownFields;
         if (u !== false)
             (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
@@ -2388,6 +2705,8 @@ export const RoutuneControl = new ServiceType("routune.RoutuneControl", [
     { name: "SetCompressor", options: {}, I: CompressorRequest, O: Empty },
     { name: "SetChannelVolume", options: {}, I: ChannelVolumeRequest, O: Empty },
     { name: "SetChannelMute", options: {}, I: ChannelMuteRequest, O: Empty },
+    { name: "SetSpatialAudio", options: {}, I: SpatialAudioRequest, O: Empty },
+    { name: "SetVolumeBoost", options: {}, I: VolumeBoostRequest, O: Empty },
     { name: "GetDaemonConfig", options: {}, I: Empty, O: DaemonConfigResponse },
     { name: "SetMicTest", options: {}, I: MicTestRequest, O: MicTestResponse },
     { name: "GetMicTest", options: {}, I: Empty, O: MicTestResponse }
