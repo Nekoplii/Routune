@@ -14,6 +14,8 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 routune-core.workspace = true
 tauri = { version = "2", features = [] }
+tauri-plugin-autostart = "2"
+tauri-plugin-global-shortcut = "2"
 serde.workspace = true
 serde_json.workspace = true
 base64 = "0.22"
