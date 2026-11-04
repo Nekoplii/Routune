@@ -4,7 +4,7 @@ import { AudioChannel, SpatialAudioMode } from "../proto/routune";
 import { routuneClient } from "../services/grpcClient";
 
 export type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
-export type NavigationView = "mixer" | "routing" | "tuning" | "about";
+export type NavigationView = "mixer" | "routing" | "tuning" | "settings" | "about";
 
 export interface SpatialAudioState {
   enabled: boolean;

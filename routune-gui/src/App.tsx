@@ -3,6 +3,7 @@ import { Header } from "./components/Header";
 import { MixerPanel } from "./components/MixerPanel";
 import { RoutingView } from "./components/RoutingView";
 import { DspTuningView } from "./components/DspTuningView";
+import { Settings } from "./components/Settings";
 import { AboutView } from "./components/AboutView";
 import { useAudioStore } from "./store/useAudioStore";
 import { useTelemetryStream } from "./hooks/useTelemetryStream";
@@ -28,6 +29,7 @@ export function App() {
             {activeView === "mixer" && <MixerPanel />}
             {activeView === "routing" && <RoutingView />}
             {activeView === "tuning" && <DspTuningView />}
+            {activeView === "settings" && <Settings />}
             {activeView === "about" && <AboutView />}
           </main>
         </div>

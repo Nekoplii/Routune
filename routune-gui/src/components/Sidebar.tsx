@@ -2,6 +2,7 @@ import {
   SlidersHorizontal,
   Split,
   AudioWaveform,
+  Settings as SettingsIcon,
   Info,
 } from "lucide-react";
 import { useAudioStore } from "../store/useAudioStore";
@@ -28,6 +29,11 @@ const NAV_ITEMS: NavItem[] = [
     id: "tuning",
     label: "Tuning",
     icon: AudioWaveform,
+  },
+  {
+    id: "settings",
+    label: "Settings",
+    icon: SettingsIcon,
   },
   {
     id: "about",
