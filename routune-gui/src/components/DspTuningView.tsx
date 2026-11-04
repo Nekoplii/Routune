@@ -141,6 +141,8 @@ export function DspTuningView() {
   const isConnected = useAudioStore((s) => s.connectionStatus === "connected");
   const channelNoiseEnabled = useAudioStore((s) => s.channelNoiseEnabled);
   const toggleAiNoise = useAudioStore((s) => s.toggleAiNoise);
+  const aiNoiseLevel = useAudioStore((s) => s.aiNoiseLevel);
+  const setAiNoiseLevel = useAudioStore((s) => s.setAiNoiseLevel);
   const noiseGate = useAudioStore((s) => s.noiseGate);
   const compressor = useAudioStore((s) => s.compressor);
   const setNoiseGate = useAudioStore((s) => s.setNoiseGate);
@@ -159,6 +161,26 @@ export function DspTuningView() {
   const activeChannel = CHANNELS.find((c) => c.id === selectedChannel) || CHANNELS[0];
   const channelGains = eqBands[selectedChannel] || [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
   const isAiNoiseActive = channelNoiseEnabled[selectedChannel] ?? false;
+
+  // Single slider compressor amount (0.0 to 1.0) mapped to threshold/ratio/makeup
+  const compAmount = Math.max(0, Math.min(1, (-compressor.thresholdDb - 10) / 22));
+
+  const handleCompressorAmountChange = useCallback(
+    (amt: number) => {
+      const clamped = Math.max(0, Math.min(1, amt));
+      const thresholdDb = -10.0 - clamped * 22.0;
+      const ratio = 2.0 + clamped * 4.0;
+      const makeupGainDb = clamped * 4.0;
+      setCompressor({
+        thresholdDb,
+        ratio,
+        makeupGainDb,
+        attackMs: 10.0,
+        releaseMs: 100.0,
+      });
+    },
+    [setCompressor]
+  );
 
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
@@ -242,14 +264,11 @@ export function DspTuningView() {
   });
 
   // Construct boundary roll-off anchors so the curve naturally starts and ends at 0 dB baseline
-  const g0 = channelGains[0] ?? 0;
-  const g9 = channelGains[9] ?? 0;
+  // Anchors start at x: 65 and end at x: 945 to match grid line bounds and avoid overlapping Y-axis dB labels (x <= 48)
   const splinePoints: Point[] = [
-    { x: 15, y: Y_BASELINE },
-    { x: 50, y: Y_BASELINE - g0 * 0.45 * 10 },
+    { x: 65, y: Y_BASELINE },
     ...nodes,
-    { x: 950, y: Y_BASELINE - g9 * 0.45 * 10 },
-    { x: 985, y: Y_BASELINE },
+    { x: 945, y: Y_BASELINE },
   ];
 
   const { curvePath, fillPath } = getMonotoneSplinePaths(splinePoints);
@@ -582,66 +601,117 @@ export function DspTuningView() {
 
         {/* Modular Effects Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
-          {/* AI Noise Suppression (RNNoise) */}
-          <div
-            className={`flex flex-col justify-between rounded-3xl border-2 p-5 gap-4 transition-colors ${
-              isAiNoiseActive
-                ? "border-[#ff5511]/50 bg-[#24242c]"
-                : "border-white/10 bg-[#202026]"
-            }`}
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <div
-                  className={`flex h-10 w-10 items-center justify-center rounded-xl border-2 transition-colors ${
+          {/* AI Noise Suppression (RNNoise) - Only available for Chat & Mic */}
+          {(selectedChannel === AudioChannel.CHAT || selectedChannel === AudioChannel.MIC) && (
+            <div
+              className={`flex flex-col justify-between rounded-3xl border p-5 gap-4 transition-colors ${
+                isAiNoiseActive
+                  ? "border-[#ff5511]/50 bg-[#24242c]"
+                  : "border-white/10 bg-[#202026]"
+              }`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div
+                    className={`flex h-10 w-10 items-center justify-center rounded-xl border transition-colors ${
+                      isAiNoiseActive
+                        ? "bg-[#ff5511]/20 border-[#ff5511]/40 text-[#ff5511]"
+                        : "bg-[#16161b] border-white/10 text-zinc-300"
+                    }`}
+                  >
+                    <AudioWaveform className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white tracking-tight">
+                      AI Noise Suppression
+                    </h3>
+                    <span className="text-[11px] font-mono text-zinc-400">RNNoise Neural Filter</span>
+                  </div>
+                </div>
+
+                {/* Toggle Switch */}
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={isAiNoiseActive}
+                  onClick={() => toggleAiNoise(selectedChannel, !isAiNoiseActive)}
+                  disabled={!isConnected}
+                  className={`relative inline-flex h-6 w-11 shrink-0 p-0.5 items-center rounded-full transition-colors duration-200 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed border-0 ${
                     isAiNoiseActive
-                      ? "bg-[#ff5511]/20 border-[#ff5511]/40 text-[#ff5511]"
-                      : "bg-[#16161b] border-white/10 text-zinc-300"
+                      ? "bg-[#ff5511] shadow-[0_0_12px_rgba(255,85,17,0.4)]"
+                      : "bg-[#282832] ring-1 ring-white/10 hover:ring-white/20"
                   }`}
+                  aria-label="Toggle AI Noise Suppression"
                 >
-                  <AudioWaveform className="h-5 w-5" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-white tracking-tight">
-                    AI Noise Suppression
-                  </h3>
-                  <span className="text-[11px] font-mono text-zinc-400">RNNoise Neural Filter</span>
-                </div>
+                  <span
+                    className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-md shadow-black/50 transition-transform duration-200 ease-out pointer-events-none ${
+                      isAiNoiseActive ? "translate-x-5" : "translate-x-0"
+                    }`}
+                  />
+                </button>
               </div>
 
-              {/* Toggle Switch */}
-              <button
-                type="button"
-                role="switch"
-                aria-checked={isAiNoiseActive}
-                onClick={() => toggleAiNoise(selectedChannel, !isAiNoiseActive)}
-                disabled={!isConnected}
-                className={`relative inline-flex h-6 w-11 shrink-0 p-0.5 items-center rounded-full transition-colors duration-200 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed border-0 ${
-                  isAiNoiseActive
-                    ? "bg-[#ff5511] shadow-[0_0_12px_rgba(255,85,17,0.4)]"
-                    : "bg-[#282832] ring-1 ring-white/10 hover:ring-white/20"
-                }`}
-                aria-label="Toggle AI Noise Suppression"
-              >
-                <span
-                  className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-md shadow-black/50 transition-transform duration-200 ease-out pointer-events-none ${
-                    isAiNoiseActive ? "translate-x-5" : "translate-x-0"
-                  }`}
-                />
-              </button>
-            </div>
+              <p className="text-xs text-zinc-300 leading-relaxed">
+                Filters background chatter, fan whine, and keyboard noise using neural networks.
+              </p>
 
-            <p className="text-xs text-zinc-300 leading-relaxed">
-              Filters background chatter, fan whine, and keyboard noise using neural networks.
-            </p>
-          </div>
+              {/* Suppression Level Slider */}
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-zinc-400 font-medium">Reduction Level</span>
+                  <span className="font-mono text-zinc-200 font-semibold">
+                    {Math.round((aiNoiseLevel ?? 1.0) * 100)}%
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.01"
+                  value={aiNoiseLevel ?? 1.0}
+                  disabled={!isConnected || !isAiNoiseActive}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value);
+                    setAiNoiseLevel(selectedChannel, val);
+                  }}
+                  className="w-full h-1.5 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-[#ff5511] disabled:opacity-40 disabled:cursor-not-allowed"
+                  title={`AI Noise Level: ${Math.round((aiNoiseLevel ?? 1.0) * 100)}%`}
+                />
+                <div className="flex justify-between text-[10px] font-mono font-medium text-zinc-500 select-none px-0.5">
+                  <button
+                    type="button"
+                    onClick={() => isAiNoiseActive && setAiNoiseLevel(selectedChannel, 0.0)}
+                    disabled={!isConnected || !isAiNoiseActive}
+                    className="hover:text-zinc-300 disabled:opacity-40 transition-colors cursor-pointer"
+                  >
+                    Min
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => isAiNoiseActive && setAiNoiseLevel(selectedChannel, 1.0)}
+                    disabled={!isConnected || !isAiNoiseActive}
+                    className="hover:text-zinc-300 disabled:opacity-40 transition-colors cursor-pointer"
+                  >
+                    Max
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Fallback info card for channels without additional DSP effects */}
+          {selectedChannel !== AudioChannel.CHAT && selectedChannel !== AudioChannel.MIC && (
+            <div className="col-span-full rounded-2xl border border-white/5 bg-[#202026]/60 p-5 text-center text-xs text-zinc-400 font-mono">
+              Pure 10-band biquad equalizer active. Noise suppression is reserved for voice communication channels (Chat & Mic).
+            </div>
+          )}
 
           {/* Noise Gate and Compressor ONLY for Mic channel */}
           {selectedChannel === AudioChannel.MIC && (
             <>
               {/* Noise Gate */}
               <div
-                className={`flex flex-col justify-between rounded-3xl border-2 p-5 gap-4 transition-colors ${
+                className={`flex flex-col justify-between rounded-3xl border p-5 gap-4 transition-colors ${
                   noiseGate.enabled
                     ? "border-[#ff5511]/50 bg-[#24242c]"
                     : "border-white/10 bg-[#202026]"
@@ -650,7 +720,7 @@ export function DspTuningView() {
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-center gap-3">
                     <div
-                      className={`flex h-10 w-10 items-center justify-center rounded-xl border-2 transition-colors ${
+                      className={`flex h-10 w-10 items-center justify-center rounded-xl border transition-colors ${
                         noiseGate.enabled
                           ? "bg-[#ff5511]/20 border-[#ff5511]/40 text-[#ff5511]"
                           : "bg-[#16161b] border-white/10 text-zinc-300"
@@ -660,7 +730,7 @@ export function DspTuningView() {
                     </div>
                     <div>
                       <h3 className="text-sm font-bold text-white tracking-tight">Noise Gate</h3>
-                      <span className="text-[11px] font-mono text-zinc-400">Threshold & Mute Floor</span>
+                      <span className="text-[11px] font-mono text-zinc-400">Background Gate</span>
                     </div>
                   </div>
 
@@ -686,70 +756,53 @@ export function DspTuningView() {
                   </button>
                 </div>
 
-                <div className="flex flex-col gap-3 pt-1">
-                  {/* Threshold */}
-                  <div className="flex flex-col gap-1">
-                    <div className="flex justify-between text-[11px] font-mono text-zinc-300">
-                      <span>Threshold</span>
-                      <span className="text-[#ff5511] font-bold">{noiseGate.thresholdDb.toFixed(1)} dB</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={-80}
-                      max={0}
-                      step={0.5}
-                      value={noiseGate.thresholdDb}
-                      onChange={(e) => setNoiseGate({ thresholdDb: parseFloat(e.target.value) })}
-                      disabled={!isConnected}
-                      className="w-full accent-[#ff5511] h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer disabled:opacity-40"
-                    />
-                  </div>
+                <p className="text-xs text-zinc-300 leading-relaxed">
+                  Mutes microphone input when your voice drops below threshold to cut out room hiss.
+                </p>
 
-                  {/* Attack & Release */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="flex flex-col gap-1">
-                      <div className="flex justify-between text-[10px] font-mono text-zinc-400">
-                        <span>Attack</span>
-                        <span className="text-zinc-200">{noiseGate.attackMs.toFixed(1)} ms</span>
-                      </div>
-                      <input
-                        type="range"
-                        min={0.5}
-                        max={50}
-                        step={0.5}
-                        value={noiseGate.attackMs}
-                        onChange={(e) => setNoiseGate({ attackMs: parseFloat(e.target.value) })}
-                        disabled={!isConnected}
-                        className="w-full accent-[#ff5511] h-1 bg-white/10 rounded-lg appearance-none cursor-pointer disabled:opacity-40"
-                      />
-                    </div>
-                    <div className="flex flex-col gap-1">
-                      <div className="flex justify-between text-[10px] font-mono text-zinc-400">
-                        <span>Release</span>
-                        <span className="text-zinc-200">{noiseGate.releaseMs.toFixed(0)} ms</span>
-                      </div>
-                      <input
-                        type="range"
-                        min={10}
-                        max={500}
-                        step={5}
-                        value={noiseGate.releaseMs}
-                        onChange={(e) => setNoiseGate({ releaseMs: parseFloat(e.target.value) })}
-                        disabled={!isConnected}
-                        className="w-full accent-[#ff5511] h-1 bg-white/10 rounded-lg appearance-none cursor-pointer disabled:opacity-40"
-                      />
-                    </div>
+                {/* Single Threshold Slider */}
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-zinc-400 font-medium">Threshold</span>
+                    <span className="font-mono text-zinc-200 font-semibold">
+                      {noiseGate.thresholdDb.toFixed(1)} dB
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={-70}
+                    max={-10}
+                    step={0.5}
+                    value={noiseGate.thresholdDb}
+                    disabled={!isConnected || !noiseGate.enabled}
+                    onChange={(e) => setNoiseGate({ thresholdDb: parseFloat(e.target.value) })}
+                    className="w-full h-1.5 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-[#ff5511] disabled:opacity-40 disabled:cursor-not-allowed"
+                    title={`Threshold: ${noiseGate.thresholdDb.toFixed(1)} dB`}
+                  />
+                  <div className="flex justify-between text-[10px] font-mono font-medium text-zinc-500 select-none px-0.5">
+                    <button
+                      type="button"
+                      onClick={() => noiseGate.enabled && setNoiseGate({ thresholdDb: -70 })}
+                      disabled={!isConnected || !noiseGate.enabled}
+                      className="hover:text-zinc-300 disabled:opacity-40 transition-colors cursor-pointer"
+                    >
+                      Min
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => noiseGate.enabled && setNoiseGate({ thresholdDb: -10 })}
+                      disabled={!isConnected || !noiseGate.enabled}
+                      className="hover:text-zinc-300 disabled:opacity-40 transition-colors cursor-pointer"
+                    >
+                      Max
+                    </button>
                   </div>
                 </div>
-
-                <p className="text-xs text-zinc-300 leading-relaxed">
-                  Cuts audio input when level drops below defined threshold to eliminate open mic hiss.
-                </p>
               </div>
 
               {/* Compressor */}
               <div
-                className={`flex flex-col justify-between rounded-3xl border-2 p-5 gap-4 transition-colors ${
+                className={`flex flex-col justify-between rounded-3xl border p-5 gap-4 transition-colors ${
                   compressor.enabled
                     ? "border-[#ff5511]/50 bg-[#24242c]"
                     : "border-white/10 bg-[#202026]"
@@ -758,7 +811,7 @@ export function DspTuningView() {
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-center gap-3">
                     <div
-                      className={`flex h-10 w-10 items-center justify-center rounded-xl border-2 transition-colors ${
+                      className={`flex h-10 w-10 items-center justify-center rounded-xl border transition-colors ${
                         compressor.enabled
                           ? "bg-[#ff5511]/20 border-[#ff5511]/40 text-[#ff5511]"
                           : "bg-[#16161b] border-white/10 text-zinc-300"
@@ -768,7 +821,7 @@ export function DspTuningView() {
                     </div>
                     <div>
                       <h3 className="text-sm font-bold text-white tracking-tight">Compressor</h3>
-                      <span className="text-[11px] font-mono text-zinc-400">Dynamic Range Leveling</span>
+                      <span className="text-[11px] font-mono text-zinc-400">Dynamic Leveler</span>
                     </div>
                   </div>
 
@@ -794,101 +847,48 @@ export function DspTuningView() {
                   </button>
                 </div>
 
-                <div className="flex flex-col gap-3 pt-1">
-                  {/* Threshold & Ratio */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="flex flex-col gap-1">
-                      <div className="flex justify-between text-[10px] font-mono text-zinc-400">
-                        <span>Threshold</span>
-                        <span className="text-[#ff5511] font-bold">{compressor.thresholdDb.toFixed(1)} dB</span>
-                      </div>
-                      <input
-                        type="range"
-                        min={-60}
-                        max={0}
-                        step={0.5}
-                        value={compressor.thresholdDb}
-                        onChange={(e) => setCompressor({ thresholdDb: parseFloat(e.target.value) })}
-                        disabled={!isConnected}
-                        className="w-full accent-[#ff5511] h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer disabled:opacity-40"
-                      />
-                    </div>
-                    <div className="flex flex-col gap-1">
-                      <div className="flex justify-between text-[10px] font-mono text-zinc-400">
-                        <span>Ratio</span>
-                        <span className="text-[#ff5511] font-bold">{compressor.ratio.toFixed(1)}:1</span>
-                      </div>
-                      <input
-                        type="range"
-                        min={1}
-                        max={20}
-                        step={0.5}
-                        value={compressor.ratio}
-                        onChange={(e) => setCompressor({ ratio: parseFloat(e.target.value) })}
-                        disabled={!isConnected}
-                        className="w-full accent-[#ff5511] h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer disabled:opacity-40"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Makeup Gain */}
-                  <div className="flex flex-col gap-1">
-                    <div className="flex justify-between text-[11px] font-mono text-zinc-300">
-                      <span>Makeup Gain</span>
-                      <span className="text-[#ff5511] font-bold">+{compressor.makeupGainDb.toFixed(1)} dB</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={0}
-                      max={24}
-                      step={0.5}
-                      value={compressor.makeupGainDb}
-                      onChange={(e) => setCompressor({ makeupGainDb: parseFloat(e.target.value) })}
-                      disabled={!isConnected}
-                      className="w-full accent-[#ff5511] h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer disabled:opacity-40"
-                    />
-                  </div>
-
-                  {/* Attack & Release */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="flex flex-col gap-1">
-                      <div className="flex justify-between text-[10px] font-mono text-zinc-400">
-                        <span>Attack</span>
-                        <span className="text-zinc-200">{compressor.attackMs.toFixed(0)} ms</span>
-                      </div>
-                      <input
-                        type="range"
-                        min={1}
-                        max={100}
-                        step={1}
-                        value={compressor.attackMs}
-                        onChange={(e) => setCompressor({ attackMs: parseFloat(e.target.value) })}
-                        disabled={!isConnected}
-                        className="w-full accent-[#ff5511] h-1 bg-white/10 rounded-lg appearance-none cursor-pointer disabled:opacity-40"
-                      />
-                    </div>
-                    <div className="flex flex-col gap-1">
-                      <div className="flex justify-between text-[10px] font-mono text-zinc-400">
-                        <span>Release</span>
-                        <span className="text-zinc-200">{compressor.releaseMs.toFixed(0)} ms</span>
-                      </div>
-                      <input
-                        type="range"
-                        min={10}
-                        max={1000}
-                        step={10}
-                        value={compressor.releaseMs}
-                        onChange={(e) => setCompressor({ releaseMs: parseFloat(e.target.value) })}
-                        disabled={!isConnected}
-                        className="w-full accent-[#ff5511] h-1 bg-white/10 rounded-lg appearance-none cursor-pointer disabled:opacity-40"
-                      />
-                    </div>
-                  </div>
-                </div>
-
                 <p className="text-xs text-zinc-300 leading-relaxed">
                   Evens out loud shouts and quiet whispers to deliver broadcast-quality consistent speech.
                 </p>
+
+                {/* Single Compression Amount Slider */}
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-zinc-400 font-medium">Compression</span>
+                    <span className="font-mono text-zinc-200 font-semibold">
+                      {Math.round(compAmount * 100)}%
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step="0.01"
+                    value={compAmount}
+                    disabled={!isConnected || !compressor.enabled}
+                    onChange={(e) => handleCompressorAmountChange(parseFloat(e.target.value))}
+                    className="w-full h-1.5 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-[#ff5511] disabled:opacity-40 disabled:cursor-not-allowed"
+                    title={`Compression: ${Math.round(compAmount * 100)}%`}
+                  />
+                  <div className="flex justify-between text-[10px] font-mono font-medium text-zinc-500 select-none px-0.5">
+                    <button
+                      type="button"
+                      onClick={() => compressor.enabled && handleCompressorAmountChange(0.0)}
+                      disabled={!isConnected || !compressor.enabled}
+                      className="hover:text-zinc-300 disabled:opacity-40 transition-colors cursor-pointer"
+                    >
+                      Min
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => compressor.enabled && handleCompressorAmountChange(1.0)}
+                      disabled={!isConnected || !compressor.enabled}
+                      className="hover:text-zinc-300 disabled:opacity-40 transition-colors cursor-pointer"
+                    >
+                      Max
+                    </button>
+                  </div>
+                </div>
               </div>
             </>
           )}
