@@ -86,6 +86,10 @@ pub trait AudioNode: Send {
     fn is_ai_noise_enabled(&self) -> bool {
         false
     }
+    fn set_ai_noise_level(&mut self, _level: f32) {}
+    fn ai_noise_level(&self) -> f32 {
+        1.0
+    }
     fn set_noise_gate(&mut self, _enabled: bool, _threshold_db: f32, _attack_ms: f32, _release_ms: f32) {}
     fn set_compressor(
         &mut self,
@@ -738,6 +742,7 @@ pub enum GraphCommand {
     SetGain { id: String, gain: f32 },
     UpdateEq(VirtualChannel, usize, f32),
     ToggleAiNoise(VirtualChannel, bool),
+    SetAiNoiseLevel(VirtualChannel, f32),
     UpdateVolume(VirtualChannel, f32),
     UpdateMute(VirtualChannel, bool),
     UpdateNoiseGate {
@@ -971,6 +976,21 @@ impl Graph {
                     if let Some(idx) = self.find_slot_by_id(noise_id) {
                         if let Some(slot) = &mut self.slots[idx] {
                             slot.node.set_ai_noise(enabled);
+                        }
+                    }
+                }
+                GraphCommand::SetAiNoiseLevel(channel, level) => {
+                    let noise_id = match channel {
+                        VirtualChannel::Master => "master-noise",
+                        VirtualChannel::Game => "game-noise",
+                        VirtualChannel::Chat => "chat-noise",
+                        VirtualChannel::Media => "media-noise",
+                        VirtualChannel::Aux => "aux-noise",
+                        VirtualChannel::Mic => "mic-noise",
+                    };
+                    if let Some(idx) = self.find_slot_by_id(noise_id) {
+                        if let Some(slot) = &mut self.slots[idx] {
+                            slot.node.set_ai_noise_level(level);
                         }
                     }
                 }
@@ -1311,6 +1331,17 @@ impl GraphController {
         if let Some(info) = self.node_infos.iter_mut().find(|n| n.id == noise_id) {
             info.bypassed = !enabled;
         }
+        Ok(())
+    }
+
+    pub fn set_ai_noise_level(
+        &mut self,
+        channel: VirtualChannel,
+        level: f32,
+    ) -> Result<(), &'static str> {
+        self.cmd_producer
+            .try_send(GraphCommand::SetAiNoiseLevel(channel, level))
+            .map_err(|_| "Command queue full")?;
         Ok(())
     }
 

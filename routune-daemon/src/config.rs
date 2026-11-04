@@ -108,6 +108,14 @@ impl ConfigManager {
         let _ = self.save_tx.try_send(());
     }
 
+    pub async fn set_noise_level(&self, level: f32) {
+        {
+            let mut guard = self.config.lock().await;
+            guard.set_noise_level(level);
+        }
+        let _ = self.save_tx.try_send(());
+    }
+
     pub async fn set_volume(&self, channel: VirtualChannel, volume_db: f32) {
         {
             let mut guard = self.config.lock().await;

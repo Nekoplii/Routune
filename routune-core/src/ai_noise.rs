@@ -63,6 +63,7 @@ pub struct AiNoiseNode {
     id: String,
     name: String,
     is_enabled: bool,
+    level: f32,
     denoise_l: Box<nnnoiseless::DenoiseState<'static>>,
     denoise_r: Box<nnnoiseless::DenoiseState<'static>>,
     in_fifo_l: SampleFifo,
@@ -79,6 +80,7 @@ impl AiNoiseNode {
             id: id.into(),
             name: name.into(),
             is_enabled: false,
+            level: 1.0,
             denoise_l: nnnoiseless::DenoiseState::new(),
             denoise_r: nnnoiseless::DenoiseState::new(),
             in_fifo_l: SampleFifo::new(),
@@ -98,6 +100,14 @@ impl AiNoiseNode {
             self.out_fifo_l.clear();
             self.out_fifo_r.clear();
         }
+    }
+
+    pub fn set_level(&mut self, level: f32) {
+        self.level = level.clamp(0.0, 1.0);
+    }
+
+    pub fn level(&self) -> f32 {
+        self.level
     }
 
     pub fn is_enabled(&self) -> bool {
@@ -136,6 +146,14 @@ impl AudioNode for AiNoiseNode {
 
     fn is_ai_noise_enabled(&self) -> bool {
         self.is_enabled
+    }
+
+    fn set_ai_noise_level(&mut self, level: f32) {
+        self.set_level(level);
+    }
+
+    fn ai_noise_level(&self) -> f32 {
+        self.level
     }
 
     fn peak_db(&self) -> f32 {
@@ -191,9 +209,16 @@ impl AudioNode for AiNoiseNode {
                 self.denoise_l.process_frame(&mut frame_out_l, &frame_in_l);
                 self.denoise_r.process_frame(&mut frame_out_r, &frame_in_r);
 
+                let level = self.level;
+                let dry_factor = 1.0 - level;
                 for j in 0..nnnoiseless::DenoiseState::FRAME_SIZE {
-                    self.out_fifo_l.push(frame_out_l[j] / 32767.0);
-                    self.out_fifo_r.push(frame_out_r[j] / 32767.0);
+                    let dry_l = frame_in_l[j] / 32767.0;
+                    let wet_l = frame_out_l[j] / 32767.0;
+                    self.out_fifo_l.push(dry_l * dry_factor + wet_l * level);
+
+                    let dry_r = frame_in_r[j] / 32767.0;
+                    let wet_r = frame_out_r[j] / 32767.0;
+                    self.out_fifo_r.push(dry_r * dry_factor + wet_r * level);
                 }
             }
 

@@ -1906,6 +1906,9 @@ fn build_channel_input_stream(
                                 ai_noise_node.set_enabled(en);
                                 noise_enabled.store(en, Ordering::Relaxed);
                             }
+                            GraphCommand::SetAiNoiseLevel(_, lvl) => {
+                                ai_noise_node.set_level(lvl);
+                            }
                             GraphCommand::UpdateNoiseGate {
                                 enabled,
                                 threshold_db,
@@ -2034,6 +2037,9 @@ fn build_channel_input_stream(
                             GraphCommand::ToggleAiNoise(_, en) => {
                                 ai_noise_node.set_enabled(en);
                                 noise_enabled.store(en, Ordering::Relaxed);
+                            }
+                            GraphCommand::SetAiNoiseLevel(_, lvl) => {
+                                ai_noise_node.set_level(lvl);
                             }
                             GraphCommand::UpdateNoiseGate {
                                 enabled,

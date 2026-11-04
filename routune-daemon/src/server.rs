@@ -62,6 +62,13 @@ pub trait TelemetryMetricsProvider: Send + Sync {
     ) -> Result<(), &'static str> {
         Ok(())
     }
+    fn set_ai_noise_level(
+        &self,
+        _channel: routune_core::graph::VirtualChannel,
+        _level: f32,
+    ) -> Result<(), &'static str> {
+        Ok(())
+    }
     fn set_volume(
         &self,
         _channel: routune_core::graph::VirtualChannel,
@@ -149,6 +156,14 @@ impl TelemetryMetricsProvider for crate::pipewire_bridge::PipeWireBridgeService 
         enabled: bool,
     ) -> Result<(), &'static str> {
         self.toggle_ai_noise(channel, enabled)
+    }
+
+    fn set_ai_noise_level(
+        &self,
+        channel: routune_core::graph::VirtualChannel,
+        level: f32,
+    ) -> Result<(), &'static str> {
+        self.set_ai_noise_level(channel, level)
     }
 
     fn set_volume(
@@ -401,12 +416,9 @@ impl proto::routune_control_server::RoutuneControl for ControlServiceImpl {
     ) -> Result<Response<proto::Empty>, Status> {
         let req = request.into_inner();
         let virtual_channel = match proto::AudioChannel::try_from(req.channel) {
-            Ok(proto::AudioChannel::Master) => routune_core::graph::VirtualChannel::Master,
-            Ok(proto::AudioChannel::Game) => routune_core::graph::VirtualChannel::Game,
             Ok(proto::AudioChannel::Chat) => routune_core::graph::VirtualChannel::Chat,
-            Ok(proto::AudioChannel::Media) => routune_core::graph::VirtualChannel::Media,
-            Ok(proto::AudioChannel::Aux) => routune_core::graph::VirtualChannel::Aux,
             Ok(proto::AudioChannel::Mic) => routune_core::graph::VirtualChannel::Mic,
+            Ok(_) => return Ok(Response::new(proto::Empty {})),
             Err(_) => return Err(Status::invalid_argument("Invalid channel")),
         };
 
@@ -414,13 +426,26 @@ impl proto::routune_control_server::RoutuneControl for ControlServiceImpl {
             if let Err(err) = provider.toggle_ai_noise(virtual_channel, req.enabled) {
                 return Err(Status::internal(format!("Failed to toggle AI noise: {err}")));
             }
+            if req.level > 0.0 {
+                let _ = provider.set_ai_noise_level(virtual_channel, req.level);
+            }
         }
 
         if let Some(ref config_manager) = self.config_manager {
             config_manager.set_noise_cancellation(virtual_channel, req.enabled).await;
+            if req.level > 0.0 {
+                config_manager.set_noise_level(req.level).await;
+            }
         }
 
         Ok(Response::new(proto::Empty {}))
+    }
+
+    async fn set_ai_noise(
+        &self,
+        request: Request<proto::AiNoiseRequest>,
+    ) -> Result<Response<proto::Empty>, Status> {
+        self.toggle_ai_noise(request).await
     }
 
     async fn set_noise_gate(
@@ -609,6 +634,7 @@ impl proto::routune_control_server::RoutuneControl for ControlServiceImpl {
                 noise_cancellation,
                 noise_gate,
                 compressor,
+                ai_noise_level: cfg.get_noise_level(),
             });
         }
 
@@ -1182,6 +1208,7 @@ mod tests {
         let req = tonic::Request::new(proto::AiNoiseRequest {
             channel: proto::AudioChannel::Chat as i32,
             enabled: true,
+            level: 0.8,
         });
 
         let res = service.toggle_ai_noise(req).await;
@@ -1196,6 +1223,7 @@ mod tests {
         let saved_cfg = routune_core::config::RoutuneConfig::load_or_default(&cfg_path);
         assert!(saved_cfg.get_noise_cancellation(routune_core::graph::VirtualChannel::Chat));
         assert!(!saved_cfg.get_noise_cancellation(routune_core::graph::VirtualChannel::Game));
+        assert!((saved_cfg.get_noise_level() - 0.8).abs() < 1e-4);
 
         let _ = std::fs::remove_file(&cfg_path);
         let _ = std::fs::remove_dir(&temp_dir);

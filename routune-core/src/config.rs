@@ -57,14 +57,37 @@ impl Default for ChannelEqConfig {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ChannelNoiseConfig {
+    #[serde(default)]
     pub game: bool,
+    #[serde(default)]
     pub chat: bool,
+    #[serde(default)]
     pub media: bool,
+    #[serde(default)]
     pub aux: bool,
     #[serde(default)]
     pub mic: bool,
+    #[serde(default = "default_noise_level")]
+    pub level: f32,
+}
+
+fn default_noise_level() -> f32 {
+    1.0
+}
+
+impl Default for ChannelNoiseConfig {
+    fn default() -> Self {
+        Self {
+            game: false,
+            chat: false,
+            media: false,
+            aux: false,
+            mic: false,
+            level: 1.0,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -241,30 +264,26 @@ impl RoutuneConfig {
 
     pub fn get_noise_cancellation(&self, channel: VirtualChannel) -> bool {
         match channel {
-            VirtualChannel::Game => self.noise_cancellation.game,
             VirtualChannel::Chat => self.noise_cancellation.chat,
-            VirtualChannel::Media => self.noise_cancellation.media,
-            VirtualChannel::Aux => self.noise_cancellation.aux,
             VirtualChannel::Mic => self.noise_cancellation.mic,
-            VirtualChannel::Master => false,
+            _ => false,
         }
     }
 
     pub fn set_noise_cancellation(&mut self, channel: VirtualChannel, enabled: bool) {
         match channel {
-            VirtualChannel::Game => self.noise_cancellation.game = enabled,
             VirtualChannel::Chat => self.noise_cancellation.chat = enabled,
-            VirtualChannel::Media => self.noise_cancellation.media = enabled,
-            VirtualChannel::Aux => self.noise_cancellation.aux = enabled,
             VirtualChannel::Mic => self.noise_cancellation.mic = enabled,
-            VirtualChannel::Master => {
-                self.noise_cancellation.game = enabled;
-                self.noise_cancellation.chat = enabled;
-                self.noise_cancellation.media = enabled;
-                self.noise_cancellation.aux = enabled;
-                self.noise_cancellation.mic = enabled;
-            }
+            _ => {}
         }
+    }
+
+    pub fn get_noise_level(&self) -> f32 {
+        self.noise_cancellation.level
+    }
+
+    pub fn set_noise_level(&mut self, level: f32) {
+        self.noise_cancellation.level = level.clamp(0.0, 1.0);
     }
 
     pub fn get_volume(&self, channel: VirtualChannel) -> f32 {
