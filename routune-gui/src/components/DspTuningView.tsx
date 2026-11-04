@@ -11,9 +11,11 @@ import {
   Sliders,
   Headphones,
   Loader2,
+  Volume2,
+  Speaker,
 } from "lucide-react";
 import { useAudioStore } from "../store/useAudioStore";
-import { AudioChannel } from "../proto/routune";
+import { AudioChannel, SpatialAudioMode } from "../proto/routune";
 import { routuneClient } from "../services/grpcClient";
 
 interface ChannelTab {
@@ -147,6 +149,10 @@ export function DspTuningView() {
   const compressor = useAudioStore((s) => s.compressor);
   const setNoiseGate = useAudioStore((s) => s.setNoiseGate);
   const setCompressor = useAudioStore((s) => s.setCompressor);
+  const spatialAudio = useAudioStore((s) => s.spatialAudio);
+  const volumeBoost = useAudioStore((s) => s.volumeBoost);
+  const setSpatialAudio = useAudioStore((s) => s.setSpatialAudio);
+  const setVolumeBoost = useAudioStore((s) => s.setVolumeBoost);
   const micTestEnabled = useAudioStore((s) => s.micTestEnabled);
   const isTogglingMicTest = useAudioStore((s) => s.isTogglingMicTest);
   const toggleMicTest = useAudioStore((s) => s.toggleMicTest);
@@ -161,6 +167,22 @@ export function DspTuningView() {
   const activeChannel = CHANNELS.find((c) => c.id === selectedChannel) || CHANNELS[0];
   const channelGains = eqBands[selectedChannel] || [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
   const isAiNoiseActive = channelNoiseEnabled[selectedChannel] ?? false;
+
+  const isPlaybackDspChannel =
+    selectedChannel === AudioChannel.GAME ||
+    selectedChannel === AudioChannel.MEDIA ||
+    selectedChannel === AudioChannel.AUX;
+
+  const currentSpatial = spatialAudio[selectedChannel] ?? {
+    enabled: false,
+    mode: SpatialAudioMode.HEADPHONE,
+    strength: 1.0,
+  };
+
+  const currentBoost = volumeBoost[selectedChannel] ?? {
+    enabled: false,
+    boostDb: 6.0,
+  };
 
   // Single slider compressor amount (0.0 to 1.0) mapped to threshold/ratio/makeup
   const compAmount = Math.max(0, Math.min(1, (-compressor.thresholdDb - 10) / 22));
@@ -699,10 +721,249 @@ export function DspTuningView() {
             </div>
           )}
 
+          {/* Spatial Audio & Volume Boost for Game, Media, and Aux */}
+          {isPlaybackDspChannel && (
+            <>
+              {/* Spatial Audio Card */}
+              <div
+                className={`flex flex-col justify-between rounded-3xl border p-5 gap-4 transition-colors ${
+                  currentSpatial.enabled
+                    ? "border-[#ff5511]/50 bg-[#24242c]"
+                    : "border-white/10 bg-[#202026]"
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div
+                      className={`flex h-10 w-10 items-center justify-center rounded-xl border transition-colors ${
+                        currentSpatial.enabled
+                          ? "bg-[#ff5511]/20 border-[#ff5511]/40 text-[#ff5511]"
+                          : "bg-[#16161b] border-white/10 text-zinc-300"
+                      }`}
+                    >
+                      <Headphones className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-bold text-white tracking-tight">Spatial Audio</h3>
+                      <span className="text-[11px] font-mono text-zinc-400">3D Soundstage</span>
+                    </div>
+                  </div>
+
+                  {/* Toggle Switch */}
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={currentSpatial.enabled}
+                    onClick={() =>
+                      setSpatialAudio(selectedChannel, { enabled: !currentSpatial.enabled })
+                    }
+                    disabled={!isConnected}
+                    className={`relative inline-flex h-6 w-11 shrink-0 p-0.5 items-center rounded-full transition-colors duration-200 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed border-0 ${
+                      currentSpatial.enabled
+                        ? "bg-[#ff5511] shadow-[0_0_12px_rgba(255,85,17,0.4)]"
+                        : "bg-[#282832] ring-1 ring-white/10 hover:ring-white/20"
+                    }`}
+                    aria-label="Toggle Spatial Audio"
+                  >
+                    <span
+                      className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-md shadow-black/50 transition-transform duration-200 ease-out pointer-events-none ${
+                        currentSpatial.enabled ? "translate-x-5" : "translate-x-0"
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                {/* Mode Selector Tabs (Headphone vs Speaker) */}
+                <div className="flex items-center rounded-xl bg-[#18181e] p-1 border border-white/5 gap-1">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setSpatialAudio(selectedChannel, { mode: SpatialAudioMode.HEADPHONE })
+                    }
+                    disabled={!isConnected || !currentSpatial.enabled}
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg text-xs font-medium transition-all ${
+                      currentSpatial.mode === SpatialAudioMode.HEADPHONE
+                        ? "bg-[#2e2e38] text-white shadow-sm font-semibold border border-white/10"
+                        : "text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.03]"
+                    } disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer`}
+                  >
+                    <Headphones className="h-3.5 w-3.5" />
+                    Headphone
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setSpatialAudio(selectedChannel, { mode: SpatialAudioMode.SPEAKER })
+                    }
+                    disabled={!isConnected || !currentSpatial.enabled}
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg text-xs font-medium transition-all ${
+                      currentSpatial.mode === SpatialAudioMode.SPEAKER
+                        ? "bg-[#2e2e38] text-white shadow-sm font-semibold border border-white/10"
+                        : "text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.03]"
+                    } disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer`}
+                  >
+                    <Speaker className="h-3.5 w-3.5" />
+                    Speaker
+                  </button>
+                </div>
+
+                <p className="text-xs text-zinc-300 leading-relaxed">
+                  {currentSpatial.mode === SpatialAudioMode.HEADPHONE
+                    ? "Binaural crossfeed and HRTF head-shadow delay for immersive headphone immersion."
+                    : "Acoustic crosstalk cancellation and stereo soundstage expansion for desktop speakers."}
+                </p>
+
+                {/* Spatial Strength Slider */}
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-zinc-400 font-medium">Effect Strength</span>
+                    <span className="font-mono text-zinc-200 font-semibold">
+                      {Math.round(currentSpatial.strength * 100)}%
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.01"
+                    value={currentSpatial.strength}
+                    disabled={!isConnected || !currentSpatial.enabled}
+                    onChange={(e) =>
+                      setSpatialAudio(selectedChannel, { strength: parseFloat(e.target.value) })
+                    }
+                    className="w-full h-1.5 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-[#ff5511] disabled:opacity-40 disabled:cursor-not-allowed"
+                    title={`Spatial Strength: ${Math.round(currentSpatial.strength * 100)}%`}
+                  />
+                  <div className="flex justify-between text-[10px] font-mono font-medium text-zinc-500 select-none px-0.5">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        currentSpatial.enabled && setSpatialAudio(selectedChannel, { strength: 0.0 })
+                      }
+                      disabled={!isConnected || !currentSpatial.enabled}
+                      className="hover:text-zinc-300 disabled:opacity-40 transition-colors cursor-pointer"
+                    >
+                      Min
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        currentSpatial.enabled && setSpatialAudio(selectedChannel, { strength: 1.0 })
+                      }
+                      disabled={!isConnected || !currentSpatial.enabled}
+                      className="hover:text-zinc-300 disabled:opacity-40 transition-colors cursor-pointer"
+                    >
+                      Max
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Volume Boost Card */}
+              <div
+                className={`flex flex-col justify-between rounded-3xl border p-5 gap-4 transition-colors ${
+                  currentBoost.enabled
+                    ? "border-[#ff5511]/50 bg-[#24242c]"
+                    : "border-white/10 bg-[#202026]"
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div
+                      className={`flex h-10 w-10 items-center justify-center rounded-xl border transition-colors ${
+                        currentBoost.enabled
+                          ? "bg-[#ff5511]/20 border-[#ff5511]/40 text-[#ff5511]"
+                          : "bg-[#16161b] border-white/10 text-zinc-300"
+                      }`}
+                    >
+                      <Volume2 className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-bold text-white tracking-tight">Volume Boost</h3>
+                      <span className="text-[11px] font-mono text-zinc-400">Soft-Limiting Amp</span>
+                    </div>
+                  </div>
+
+                  {/* Toggle Switch */}
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={currentBoost.enabled}
+                    onClick={() =>
+                      setVolumeBoost(selectedChannel, { enabled: !currentBoost.enabled })
+                    }
+                    disabled={!isConnected}
+                    className={`relative inline-flex h-6 w-11 shrink-0 p-0.5 items-center rounded-full transition-colors duration-200 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed border-0 ${
+                      currentBoost.enabled
+                        ? "bg-[#ff5511] shadow-[0_0_12px_rgba(255,85,17,0.4)]"
+                        : "bg-[#282832] ring-1 ring-white/10 hover:ring-white/20"
+                    }`}
+                    aria-label="Toggle Volume Boost"
+                  >
+                    <span
+                      className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-md shadow-black/50 transition-transform duration-200 ease-out pointer-events-none ${
+                        currentBoost.enabled ? "translate-x-5" : "translate-x-0"
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                <p className="text-xs text-zinc-300 leading-relaxed">
+                  Amplifies quiet audio details with soft saturation limiting to prevent harsh digital clipping.
+                </p>
+
+                {/* Boost dB Slider */}
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-zinc-400 font-medium">Gain Boost</span>
+                    <span className="font-mono text-zinc-200 font-semibold">
+                      +{currentBoost.boostDb.toFixed(1)} dB
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="12"
+                    step="0.5"
+                    value={currentBoost.boostDb}
+                    disabled={!isConnected || !currentBoost.enabled}
+                    onChange={(e) =>
+                      setVolumeBoost(selectedChannel, { boostDb: parseFloat(e.target.value) })
+                    }
+                    className="w-full h-1.5 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-[#ff5511] disabled:opacity-40 disabled:cursor-not-allowed"
+                    title={`Volume Boost: +${currentBoost.boostDb.toFixed(1)} dB`}
+                  />
+                  <div className="flex justify-between text-[10px] font-mono font-medium text-zinc-500 select-none px-0.5">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        currentBoost.enabled && setVolumeBoost(selectedChannel, { boostDb: 0.0 })
+                      }
+                      disabled={!isConnected || !currentBoost.enabled}
+                      className="hover:text-zinc-300 disabled:opacity-40 transition-colors cursor-pointer"
+                    >
+                      0 dB
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        currentBoost.enabled && setVolumeBoost(selectedChannel, { boostDb: 12.0 })
+                      }
+                      disabled={!isConnected || !currentBoost.enabled}
+                      className="hover:text-zinc-300 disabled:opacity-40 transition-colors cursor-pointer"
+                    >
+                      +12 dB
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+
           {/* Fallback info card for channels without additional DSP effects */}
-          {selectedChannel !== AudioChannel.CHAT && selectedChannel !== AudioChannel.MIC && (
+          {!isPlaybackDspChannel && selectedChannel !== AudioChannel.CHAT && selectedChannel !== AudioChannel.MIC && (
             <div className="col-span-full rounded-2xl border border-white/5 bg-[#202026]/60 p-5 text-center text-xs text-zinc-400 font-mono">
-              Pure 10-band biquad equalizer active. Noise suppression is reserved for voice communication channels (Chat & Mic).
+              Pure 10-band biquad equalizer active.
             </div>
           )}
 

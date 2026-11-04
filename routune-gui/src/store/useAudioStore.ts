@@ -1,10 +1,21 @@
 import { create } from "zustand";
 import type { AppStream, ChannelVolumeMetric, OutputDeviceInfo } from "../proto/routune";
-import { AudioChannel } from "../proto/routune";
+import { AudioChannel, SpatialAudioMode } from "../proto/routune";
 import { routuneClient } from "../services/grpcClient";
 
 export type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
 export type NavigationView = "mixer" | "routing" | "tuning" | "about";
+
+export interface SpatialAudioState {
+  enabled: boolean;
+  mode: SpatialAudioMode;
+  strength: number;
+}
+
+export interface VolumeBoostState {
+  enabled: boolean;
+  boostDb: number;
+}
 
 export interface NoiseGateState {
   enabled: boolean;
@@ -68,6 +79,10 @@ interface AudioStoreState {
   micTestEnabled: boolean;
   isTogglingMicTest: boolean;
 
+  // Spatial Audio & Volume Boost (Game, Media, Aux)
+  spatialAudio: Record<number, SpatialAudioState>;
+  volumeBoost: Record<number, VolumeBoostState>;
+
   // Actions
   setConnectionStatus: (status: ConnectionStatus, error?: string | null) => void;
   setAudioActive: (active: boolean) => void;
@@ -94,6 +109,8 @@ interface AudioStoreState {
   setAiNoiseLevel: (channel: AudioChannel, level: number) => Promise<boolean>;
   setNoiseGate: (params: Partial<NoiseGateState>) => Promise<boolean>;
   setCompressor: (params: Partial<CompressorState>) => Promise<boolean>;
+  setSpatialAudio: (channel: AudioChannel, params: Partial<SpatialAudioState>) => Promise<boolean>;
+  setVolumeBoost: (channel: AudioChannel, params: Partial<VolumeBoostState>) => Promise<boolean>;
   setActiveView: (view: NavigationView) => void;
   setChannelVolume: (channel: AudioChannel, volume: number) => void;
   setChannelFaderDb: (channel: AudioChannel, db: number) => void;
@@ -173,6 +190,8 @@ const volumeDebounceTimers: Record<number, ReturnType<typeof setTimeout>> = {};
 let noiseGateDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 let compressorDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 let aiNoiseDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+const spatialDebounceTimers: Record<number, ReturnType<typeof setTimeout>> = {};
+const volumeBoostDebounceTimers: Record<number, ReturnType<typeof setTimeout>> = {};
 
 export const DEFAULT_NOISE_GATE: NoiseGateState = {
   enabled: false,
@@ -190,6 +209,17 @@ export const DEFAULT_COMPRESSOR: CompressorState = {
   makeupGainDb: 0.0,
 };
 
+export const DEFAULT_SPATIAL_AUDIO: SpatialAudioState = {
+  enabled: false,
+  mode: SpatialAudioMode.HEADPHONE,
+  strength: 1.0,
+};
+
+export const DEFAULT_VOLUME_BOOST: VolumeBoostState = {
+  enabled: false,
+  boostDb: 6.0,
+};
+
 interface CachedConfig {
   channelFaderDb: Record<number, number>;
   channelMuted: Record<number, boolean>;
@@ -199,6 +229,8 @@ interface CachedConfig {
   eqBands: Record<number, number[]>;
   noiseGate?: NoiseGateState;
   compressor?: CompressorState;
+  spatialAudio?: Record<number, SpatialAudioState>;
+  volumeBoost?: Record<number, VolumeBoostState>;
 }
 
 function loadLocalConfig(): Partial<CachedConfig> {
@@ -325,6 +357,17 @@ export const useAudioStore = create<AudioStoreState>((set, get) => ({
 
   noiseGate: initialCached.noiseGate ?? DEFAULT_NOISE_GATE,
   compressor: initialCached.compressor ?? DEFAULT_COMPRESSOR,
+
+  spatialAudio: {
+    [AudioChannel.GAME]: { ...DEFAULT_SPATIAL_AUDIO, ...(initialCached.spatialAudio?.[AudioChannel.GAME] ?? {}) },
+    [AudioChannel.MEDIA]: { ...DEFAULT_SPATIAL_AUDIO, ...(initialCached.spatialAudio?.[AudioChannel.MEDIA] ?? {}) },
+    [AudioChannel.AUX]: { ...DEFAULT_SPATIAL_AUDIO, ...(initialCached.spatialAudio?.[AudioChannel.AUX] ?? {}) },
+  },
+  volumeBoost: {
+    [AudioChannel.GAME]: { ...DEFAULT_VOLUME_BOOST, ...(initialCached.volumeBoost?.[AudioChannel.GAME] ?? {}) },
+    [AudioChannel.MEDIA]: { ...DEFAULT_VOLUME_BOOST, ...(initialCached.volumeBoost?.[AudioChannel.MEDIA] ?? {}) },
+    [AudioChannel.AUX]: { ...DEFAULT_VOLUME_BOOST, ...(initialCached.volumeBoost?.[AudioChannel.AUX] ?? {}) },
+  },
 
   micTestEnabled: false,
   isTogglingMicTest: false,
@@ -464,6 +507,8 @@ export const useAudioStore = create<AudioStoreState>((set, get) => ({
       const nextRoutings: Record<number, string> = {};
       const nextEqBands: Record<number, number[]> = {};
       const nextNoise: Record<number, boolean> = {};
+      const nextSpatialAudio: Record<number, SpatialAudioState> = {};
+      const nextVolumeBoost: Record<number, VolumeBoostState> = {};
       let nextAiNoiseLevel: number | undefined;
       let nextNoiseGate: NoiseGateState | undefined;
       let nextCompressor: CompressorState | undefined;
@@ -481,6 +526,20 @@ export const useAudioStore = create<AudioStoreState>((set, get) => ({
         nextNoise[ch] = chState.noiseCancellation;
         if (chState.aiNoiseLevel !== undefined && chState.aiNoiseLevel > 0) {
           nextAiNoiseLevel = chState.aiNoiseLevel;
+        }
+
+        if (chState.spatialAudio) {
+          nextSpatialAudio[ch] = {
+            enabled: chState.spatialAudio.enabled,
+            mode: chState.spatialAudio.mode,
+            strength: chState.spatialAudio.strength,
+          };
+        }
+        if (chState.volumeBoost) {
+          nextVolumeBoost[ch] = {
+            enabled: chState.volumeBoost.enabled,
+            boostDb: chState.volumeBoost.boostDb,
+          };
         }
 
         if (ch === AudioChannel.MIC) {
@@ -511,6 +570,8 @@ export const useAudioStore = create<AudioStoreState>((set, get) => ({
         channelRoutings: { ...s.channelRoutings, ...nextRoutings },
         eqBands: { ...s.eqBands, ...nextEqBands },
         channelNoiseEnabled: { ...s.channelNoiseEnabled, ...nextNoise },
+        spatialAudio: { ...s.spatialAudio, ...nextSpatialAudio },
+        volumeBoost: { ...s.volumeBoost, ...nextVolumeBoost },
         ...(nextAiNoiseLevel !== undefined ? { aiNoiseLevel: nextAiNoiseLevel } : {}),
         ...(nextNoiseGate ? { noiseGate: nextNoiseGate } : {}),
         ...(nextCompressor ? { compressor: nextCompressor } : {}),
@@ -522,6 +583,8 @@ export const useAudioStore = create<AudioStoreState>((set, get) => ({
         channelRoutings: nextRoutings,
         eqBands: nextEqBands,
         channelNoiseEnabled: nextNoise,
+        spatialAudio: nextSpatialAudio,
+        volumeBoost: nextVolumeBoost,
         ...(nextAiNoiseLevel !== undefined ? { aiNoiseLevel: nextAiNoiseLevel } : {}),
         ...(nextNoiseGate ? { noiseGate: nextNoiseGate } : {}),
         ...(nextCompressor ? { compressor: nextCompressor } : {}),
@@ -774,6 +837,80 @@ export const useAudioStore = create<AudioStoreState>((set, get) => ({
           resolve(true);
         } catch (err) {
           console.warn("Failed to set compressor:", err);
+          resolve(false);
+        }
+      }, 50);
+    });
+  },
+
+  setSpatialAudio: async (channel: AudioChannel, params: Partial<SpatialAudioState>) => {
+    if (channel !== AudioChannel.GAME && channel !== AudioChannel.MEDIA && channel !== AudioChannel.AUX) {
+      return false;
+    }
+    const current = get().spatialAudio[channel] ?? DEFAULT_SPATIAL_AUDIO;
+    const next: SpatialAudioState = { ...current, ...params };
+    set((s) => ({
+      spatialAudio: {
+        ...s.spatialAudio,
+        [channel]: next,
+      },
+    }));
+    const updated = { ...get().spatialAudio, [channel]: next };
+    saveLocalConfig({ spatialAudio: updated });
+
+    if (spatialDebounceTimers[channel]) {
+      clearTimeout(spatialDebounceTimers[channel]);
+    }
+
+    return new Promise<boolean>((resolve) => {
+      spatialDebounceTimers[channel] = setTimeout(async () => {
+        delete spatialDebounceTimers[channel];
+        try {
+          const call = routuneClient.setSpatialAudio({
+            channel,
+            config: next,
+          });
+          await call.response;
+          resolve(true);
+        } catch (err) {
+          console.warn(`Failed to set spatial audio for channel ${channel}:`, err);
+          resolve(false);
+        }
+      }, 50);
+    });
+  },
+
+  setVolumeBoost: async (channel: AudioChannel, params: Partial<VolumeBoostState>) => {
+    if (channel !== AudioChannel.GAME && channel !== AudioChannel.MEDIA && channel !== AudioChannel.AUX) {
+      return false;
+    }
+    const current = get().volumeBoost[channel] ?? DEFAULT_VOLUME_BOOST;
+    const next: VolumeBoostState = { ...current, ...params };
+    set((s) => ({
+      volumeBoost: {
+        ...s.volumeBoost,
+        [channel]: next,
+      },
+    }));
+    const updated = { ...get().volumeBoost, [channel]: next };
+    saveLocalConfig({ volumeBoost: updated });
+
+    if (volumeBoostDebounceTimers[channel]) {
+      clearTimeout(volumeBoostDebounceTimers[channel]);
+    }
+
+    return new Promise<boolean>((resolve) => {
+      volumeBoostDebounceTimers[channel] = setTimeout(async () => {
+        delete volumeBoostDebounceTimers[channel];
+        try {
+          const call = routuneClient.setVolumeBoost({
+            channel,
+            config: next,
+          });
+          await call.response;
+          resolve(true);
+        } catch (err) {
+          console.warn(`Failed to set volume boost for channel ${channel}:`, err);
           resolve(false);
         }
       }, 50);
