@@ -4,6 +4,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::graph::{VirtualChannel, EQ_BANDS_COUNT};
+use crate::spatial::SpatialAudioMode;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ChannelRoutingConfig {
@@ -167,6 +168,58 @@ impl Default for CompressorConfig {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SpatialAudioConfig {
+    pub enabled: bool,
+    pub mode: SpatialAudioMode,
+    pub strength: f32,
+}
+
+impl Default for SpatialAudioConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            mode: SpatialAudioMode::Headphone,
+            strength: 1.0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct ChannelSpatialConfig {
+    #[serde(default)]
+    pub game: SpatialAudioConfig,
+    #[serde(default)]
+    pub media: SpatialAudioConfig,
+    #[serde(default)]
+    pub aux: SpatialAudioConfig,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct VolumeBoostConfig {
+    pub enabled: bool,
+    pub boost_db: f32,
+}
+
+impl Default for VolumeBoostConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            boost_db: 6.0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct ChannelVolumeBoostConfig {
+    #[serde(default)]
+    pub game: VolumeBoostConfig,
+    #[serde(default)]
+    pub media: VolumeBoostConfig,
+    #[serde(default)]
+    pub aux: VolumeBoostConfig,
+}
+
 /// Persistent configuration for Routune daemon state.
 /// Holds hardware device mappings and 10-band EQ settings per channel.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
@@ -183,6 +236,10 @@ pub struct RoutuneConfig {
     pub noise_gate: NoiseGateConfig,
     #[serde(default)]
     pub compressor: CompressorConfig,
+    #[serde(default)]
+    pub spatial_audio: ChannelSpatialConfig,
+    #[serde(default)]
+    pub volume_boost: ChannelVolumeBoostConfig,
 }
 
 impl RoutuneConfig {
@@ -371,6 +428,51 @@ impl RoutuneConfig {
             release_ms: release_ms.clamp(1.0, 3000.0),
             makeup_gain_db: makeup_gain_db.clamp(0.0, 24.0),
         };
+    }
+
+    pub fn get_spatial_audio(&self, channel: VirtualChannel) -> Option<&SpatialAudioConfig> {
+        match channel {
+            VirtualChannel::Game => Some(&self.spatial_audio.game),
+            VirtualChannel::Media => Some(&self.spatial_audio.media),
+            VirtualChannel::Aux => Some(&self.spatial_audio.aux),
+            _ => None,
+        }
+    }
+
+    pub fn set_spatial_audio(&mut self, channel: VirtualChannel, config: SpatialAudioConfig) {
+        let clean = SpatialAudioConfig {
+            enabled: config.enabled,
+            mode: config.mode,
+            strength: config.strength.clamp(0.0, 1.0),
+        };
+        match channel {
+            VirtualChannel::Game => self.spatial_audio.game = clean,
+            VirtualChannel::Media => self.spatial_audio.media = clean,
+            VirtualChannel::Aux => self.spatial_audio.aux = clean,
+            _ => {}
+        }
+    }
+
+    pub fn get_volume_boost(&self, channel: VirtualChannel) -> Option<&VolumeBoostConfig> {
+        match channel {
+            VirtualChannel::Game => Some(&self.volume_boost.game),
+            VirtualChannel::Media => Some(&self.volume_boost.media),
+            VirtualChannel::Aux => Some(&self.volume_boost.aux),
+            _ => None,
+        }
+    }
+
+    pub fn set_volume_boost(&mut self, channel: VirtualChannel, config: VolumeBoostConfig) {
+        let clean = VolumeBoostConfig {
+            enabled: config.enabled,
+            boost_db: config.boost_db.clamp(0.0, 12.0),
+        };
+        match channel {
+            VirtualChannel::Game => self.volume_boost.game = clean,
+            VirtualChannel::Media => self.volume_boost.media = clean,
+            VirtualChannel::Aux => self.volume_boost.aux = clean,
+            _ => {}
+        }
     }
 
     /// Load configuration from a JSON file, or return default template if not found.

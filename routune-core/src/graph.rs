@@ -4,8 +4,10 @@ use crossbeam_channel::{Receiver, Sender};
 use rubato::{FastFixedIn, PolynomialDegree, Resampler};
 use serde::{Deserialize, Serialize};
 
+use crate::spatial::SpatialAudioMode;
+
 pub const DEFAULT_MAX_CHUNKS: usize = 4096;
-pub const MAX_GRAPH_NODES: usize = 32;
+pub const MAX_GRAPH_NODES: usize = 64;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProcessContext {
@@ -100,6 +102,8 @@ pub trait AudioNode: Send {
         _release_ms: f32,
         _makeup_gain_db: f32,
     ) {}
+    fn set_spatial_audio(&mut self, _enabled: bool, _mode: SpatialAudioMode, _strength: f32) {}
+    fn set_volume_boost(&mut self, _enabled: bool, _boost_db: f32) {}
     fn reset(&mut self) {}
     fn peak_db(&self) -> f32 {
         -100.0
@@ -541,7 +545,7 @@ pub const EQ_FREQUENCIES_HZ: [f32; EQ_BANDS_COUNT] = [
     31.0, 62.0, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0,
 ];
 /// Q factor for 1-octave spacing: 1 / (2 * sinh(ln(2)/2)) = sqrt(2) ~= 1.41421356
-pub const DEFAULT_EQ_Q: f32 = 1.41421356;
+pub const DEFAULT_EQ_Q: f32 = std::f32::consts::SQRT_2;
 
 /// 10-Band Parametric/Graphic Equalizer AudioNode.
 /// Cascades 10 biquad peaking EQ filters for Left and Right channels.
@@ -760,6 +764,17 @@ pub enum GraphCommand {
         attack_ms: f32,
         release_ms: f32,
         makeup_gain_db: f32,
+    },
+    UpdateSpatialAudio {
+        channel: VirtualChannel,
+        enabled: bool,
+        mode: SpatialAudioMode,
+        strength: f32,
+    },
+    UpdateVolumeBoost {
+        channel: VirtualChannel,
+        enabled: bool,
+        boost_db: f32,
     },
 }
 
@@ -1069,6 +1084,41 @@ impl Graph {
                                 release_ms,
                                 makeup_gain_db,
                             );
+                        }
+                    }
+                }
+                GraphCommand::UpdateSpatialAudio {
+                    channel,
+                    enabled,
+                    mode,
+                    strength,
+                } => {
+                    let node_id = match channel {
+                        VirtualChannel::Game => "game-spatial",
+                        VirtualChannel::Media => "media-spatial",
+                        VirtualChannel::Aux => "aux-spatial",
+                        _ => "",
+                    };
+                    if let Some(idx) = self.find_slot_by_id(node_id) {
+                        if let Some(slot) = &mut self.slots[idx] {
+                            slot.node.set_spatial_audio(enabled, mode, strength);
+                        }
+                    }
+                }
+                GraphCommand::UpdateVolumeBoost {
+                    channel,
+                    enabled,
+                    boost_db,
+                } => {
+                    let node_id = match channel {
+                        VirtualChannel::Game => "game-boost",
+                        VirtualChannel::Media => "media-boost",
+                        VirtualChannel::Aux => "aux-boost",
+                        _ => "",
+                    };
+                    if let Some(idx) = self.find_slot_by_id(node_id) {
+                        if let Some(slot) = &mut self.slots[idx] {
+                            slot.node.set_volume_boost(enabled, boost_db);
                         }
                     }
                 }
@@ -1417,6 +1467,58 @@ impl GraphController {
             if let Some(info) = self.node_infos.iter_mut().find(|n| n.id == "mic-comp") {
                 info.bypassed = !enabled;
             }
+        }
+        Ok(())
+    }
+
+    pub fn set_spatial_audio(
+        &mut self,
+        channel: VirtualChannel,
+        enabled: bool,
+        mode: SpatialAudioMode,
+        strength: f32,
+    ) -> Result<(), &'static str> {
+        self.cmd_producer
+            .try_send(GraphCommand::UpdateSpatialAudio {
+                channel,
+                enabled,
+                mode,
+                strength,
+            })
+            .map_err(|_| "Command queue full")?;
+        let spatial_id = match channel {
+            VirtualChannel::Game => "game-spatial",
+            VirtualChannel::Media => "media-spatial",
+            VirtualChannel::Aux => "aux-spatial",
+            _ => "",
+        };
+        if let Some(info) = self.node_infos.iter_mut().find(|n| n.id == spatial_id) {
+            info.bypassed = !enabled;
+        }
+        Ok(())
+    }
+
+    pub fn set_volume_boost(
+        &mut self,
+        channel: VirtualChannel,
+        enabled: bool,
+        boost_db: f32,
+    ) -> Result<(), &'static str> {
+        self.cmd_producer
+            .try_send(GraphCommand::UpdateVolumeBoost {
+                channel,
+                enabled,
+                boost_db,
+            })
+            .map_err(|_| "Command queue full")?;
+        let boost_id = match channel {
+            VirtualChannel::Game => "game-boost",
+            VirtualChannel::Media => "media-boost",
+            VirtualChannel::Aux => "aux-boost",
+            _ => "",
+        };
+        if let Some(info) = self.node_infos.iter_mut().find(|n| n.id == boost_id) {
+            info.bypassed = !enabled;
         }
         Ok(())
     }
