@@ -1,0 +1,81 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build & Release (Linux x86_64)
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libssl-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libasound2-dev \
+            libpipewire-0.3-dev \
+            libclang-dev \
+            protobuf-compiler \
+            rpm \
+            squashfs-tools
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build routune-daemon
+        run: cargo build --release -p routune-daemon
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: routune-gui/package-lock.json
+
+      - name: Install GUI Dependencies
+        working-directory: routune-gui
+        run: npm install
+
+      - name: Build GUI & Create GitHub Release
+        id: tauri_build
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: routune-gui
+          tagName: ${{ github.ref_name }}
+          releaseName: "Routune ${{ github.ref_name }}"
+          releaseBody: "Release ${{ github.ref_name }} for Routune Audio Routing & DSP."
+          releaseDraft: false
+          prerelease: false
+          args: --bundles deb,rpm,appimage
+
+      - name: Upload Daemon & Systemd Service to Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ github.ref_name }}" \
+            target/release/routune-daemon \
+            packaging/routune.service \
+            --clobber
