@@ -344,30 +344,49 @@ export function AppRoutingPanel() {
       </div>
 
       {/* Mic Input Card (Physical Capture Hardware -> PipeWire Virtual Source) */}
-      <div className="rounded-3xl border-2 border-white/10 bg-[#202026] p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center gap-3.5">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-rose-500/15 border-2 border-rose-500/30 text-rose-400">
-            <Mic className="h-5 w-5" />
-          </div>
-          <div className="flex flex-col gap-0.5">
-            <div className="flex items-center gap-2">
-              <h2 className="text-sm font-bold text-white tracking-tight">Mic Input</h2>
-              <span className="rounded-md border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-[10px] font-mono text-rose-300">
+      <div className="rounded-3xl border-2 border-white/10 bg-[#202026] p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-3 sm:gap-4">
+        {/* Header row on small screens, left side on lg */}
+        <div className="flex items-center justify-between lg:justify-start gap-3 min-w-0 w-full lg:w-auto">
+          <div className="flex items-center gap-3.5 min-w-0">
+            <div className="flex h-10 w-10 sm:h-11 sm:w-11 shrink-0 items-center justify-center rounded-2xl bg-rose-500/15 border-2 border-rose-500/30 text-rose-400">
+              <Mic className="h-5 w-5" />
+            </div>
+            <div className="flex items-center gap-2.5 min-w-0">
+              <h2 className="text-sm font-bold text-white tracking-tight shrink-0">Mic Input</h2>
+              <span className="rounded-md border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-[10px] font-mono text-rose-300 shrink-0">
                 Audio/Source/Virtual
               </span>
             </div>
-            <p className="text-xs text-zinc-400">
-              Direct physical microphone capture stream into "Routune Mic" PipeWire virtual source.
-            </p>
           </div>
-        </div>
 
-        <div className="flex items-center gap-2.5 w-full md:w-auto">
+          {/* Test Mic Button: positioned top-right on compact / minimum window */}
           <button
             type="button"
             disabled={isTogglingMicTest}
             onClick={() => toggleMicTest()}
-            className={`flex items-center gap-2 rounded-xl border-2 px-3.5 py-2.5 text-xs font-semibold transition-all shrink-0 ${
+            className={`lg:hidden flex items-center justify-center gap-2 rounded-xl border-2 px-3 py-2 text-xs font-semibold transition-all shrink-0 cursor-pointer ${
+              micTestEnabled
+                ? "border-emerald-500/60 bg-emerald-500/20 text-emerald-300 shadow-md shadow-emerald-950/40"
+                : "border-white/10 bg-[#16161b] text-zinc-400 hover:border-white/20 hover:text-zinc-200"
+            } disabled:opacity-50`}
+            title="Listen to microphone with DSP effects in real time through primary output"
+          >
+            {isTogglingMicTest ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-emerald-400" />
+            ) : (
+              <Headphones className={`h-3.5 w-3.5 shrink-0 ${micTestEnabled ? "text-emerald-400" : "text-zinc-400"}`} />
+            )}
+            <span className="whitespace-nowrap">{micTestEnabled ? "Testing Mic" : "Test Mic"}</span>
+          </button>
+        </div>
+
+        {/* Right side controls: Test button (visible on lg+) and device dropdown */}
+        <div className="flex items-center gap-2.5 w-full lg:w-auto min-w-0">
+          <button
+            type="button"
+            disabled={isTogglingMicTest}
+            onClick={() => toggleMicTest()}
+            className={`hidden lg:flex items-center justify-center gap-2 rounded-xl border-2 px-3.5 py-2.5 text-xs font-semibold transition-all shrink-0 cursor-pointer ${
               micTestEnabled
                 ? "border-emerald-500/60 bg-emerald-500/20 text-emerald-300 shadow-lg shadow-emerald-950/40"
                 : "border-white/10 bg-[#16161b] text-zinc-400 hover:border-white/20 hover:text-zinc-200"
@@ -377,17 +396,17 @@ export function AppRoutingPanel() {
             {isTogglingMicTest ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin text-emerald-400" />
             ) : (
-              <Headphones className={`h-3.5 w-3.5 ${micTestEnabled ? "text-emerald-400" : "text-zinc-400"}`} />
+              <Headphones className={`h-3.5 w-3.5 shrink-0 ${micTestEnabled ? "text-emerald-400" : "text-zinc-400"}`} />
             )}
-            <span>{micTestEnabled ? "Testing Mic (Active)" : "Test Mic"}</span>
+            <span className="whitespace-nowrap">{micTestEnabled ? "Testing Mic (Active)" : "Test Mic"}</span>
           </button>
 
-          <div className="relative w-full md:w-72">
+          <div className="relative flex-1 lg:w-72 min-w-0">
             <select
               value={channelRoutings[AudioChannel.MIC] || "none"}
               disabled={isRoutingUpdating[AudioChannel.MIC]}
               onChange={(e) => setChannelRouting(AudioChannel.MIC, e.target.value)}
-              className="w-full appearance-none rounded-xl border-2 border-white/10 bg-[#16161b] py-2.5 pl-3 pr-8 text-xs font-medium text-zinc-200 focus:border-[#ff5511] focus:outline-none cursor-pointer disabled:opacity-50"
+              className="w-full appearance-none rounded-xl border-2 border-white/10 bg-[#16161b] py-2.5 pl-3 pr-8 text-xs font-medium text-zinc-200 focus:border-[#ff5511] focus:outline-none cursor-pointer disabled:opacity-50 truncate"
             >
               <option value="none">No input (disabled)</option>
               {hardwareInputs.map((d) => (
