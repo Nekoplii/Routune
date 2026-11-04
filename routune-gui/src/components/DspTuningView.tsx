@@ -330,21 +330,43 @@ export function DspTuningView() {
   return (
     <div className="flex flex-col gap-6 w-full max-w-7xl mx-auto pb-8 select-none">
       {/* Top Header: Title and Channel Selector Pill */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 sm:gap-4">
+        <div className="flex items-center justify-between w-full lg:w-auto">
           <h1 className="text-xl font-bold tracking-tight text-white font-sans">
             Tuning
           </h1>
-        </div>
 
-        {/* Channel Segmented Pill Selector and Mic Test Button */}
-        <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+          {/* On compact / minimum window: Test Mic button right-aligned on title row */}
           {selectedChannel === AudioChannel.MIC && (
             <button
               type="button"
               disabled={isTogglingMicTest}
               onClick={() => toggleMicTest()}
-              className={`flex items-center gap-2 rounded-full border-2 px-4 py-2 text-xs font-semibold transition-all ${
+              className={`lg:hidden flex items-center gap-2 rounded-full border-2 px-3.5 py-1.5 text-xs font-semibold transition-all cursor-pointer shrink-0 ${
+                micTestEnabled
+                  ? "border-emerald-500/60 bg-emerald-500/20 text-emerald-300 shadow-md shadow-emerald-950/40"
+                  : "border-white/10 bg-[#202026] text-zinc-300 hover:text-white hover:border-white/20"
+              } disabled:opacity-50`}
+              title="Listen to microphone with live DSP effects directly in headphones"
+            >
+              {isTogglingMicTest ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin text-emerald-400" />
+              ) : (
+                <Headphones className={`h-3.5 w-3.5 shrink-0 ${micTestEnabled ? "text-emerald-400" : "text-zinc-400"}`} />
+              )}
+              <span className="whitespace-nowrap">{micTestEnabled ? "Testing Mic" : "Test Mic"}</span>
+            </button>
+          )}
+        </div>
+
+        {/* Channel Segmented Pill Selector and Mic Test Button (on lg+) */}
+        <div className="flex items-center gap-2 self-start lg:self-auto w-full lg:w-auto overflow-x-auto scrollbar-none">
+          {selectedChannel === AudioChannel.MIC && (
+            <button
+              type="button"
+              disabled={isTogglingMicTest}
+              onClick={() => toggleMicTest()}
+              className={`hidden lg:flex items-center gap-2 rounded-full border-2 px-4 py-2 text-xs font-semibold transition-all cursor-pointer shrink-0 ${
                 micTestEnabled
                   ? "border-emerald-500/60 bg-emerald-500/20 text-emerald-300 shadow-lg shadow-emerald-950/40"
                   : "border-white/10 bg-[#202026] text-zinc-300 hover:text-white hover:border-white/20"
@@ -354,13 +376,13 @@ export function DspTuningView() {
               {isTogglingMicTest ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin text-emerald-400" />
               ) : (
-                <Headphones className={`h-3.5 w-3.5 ${micTestEnabled ? "text-emerald-400" : "text-zinc-400"}`} />
+                <Headphones className={`h-3.5 w-3.5 shrink-0 ${micTestEnabled ? "text-emerald-400" : "text-zinc-400"}`} />
               )}
-              <span>{micTestEnabled ? "Testing Mic (Active)" : "Test Mic"}</span>
+              <span className="whitespace-nowrap">{micTestEnabled ? "Testing Mic (Active)" : "Test Mic"}</span>
             </button>
           )}
 
-          <div className="flex flex-wrap items-center gap-1 rounded-full border-2 border-white/10 bg-[#202026] p-1.5">
+          <div className="flex items-center gap-1 rounded-full border-2 border-white/10 bg-[#202026] p-1.5 shrink-0">
             {CHANNELS.map((ch) => {
               const Icon = ch.icon;
               const isSelected = ch.id === selectedChannel;
@@ -369,7 +391,7 @@ export function DspTuningView() {
                   type="button"
                   key={ch.id}
                   onClick={() => setSelectedChannel(ch.id)}
-                  className={`flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold transition-colors cursor-pointer border-2 ${
+                  className={`flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold transition-colors cursor-pointer border-2 shrink-0 ${
                     isSelected
                       ? "bg-[#ff5511] border-[#ff5511] text-white"
                       : "border-transparent text-zinc-300 hover:text-white hover:bg-[#282830]"
@@ -385,50 +407,58 @@ export function DspTuningView() {
       </div>
 
       {/* Main Equalizer Card */}
-      <div className="flex flex-col rounded-3xl border-2 border-white/10 bg-[#202026] p-4 sm:p-6">
+      <div className="flex flex-col rounded-3xl border-2 border-white/10 bg-[#202026] p-4 sm:p-6 gap-5">
         {/* Equalizer Header Row */}
-        <div className="flex flex-wrap items-center justify-between gap-3 pb-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <h2 className="text-base font-bold text-white tracking-tight">
               Equalizer ({activeChannel.name})
             </h2>
-            {currentPresetName !== "Custom" && (
+            {currentPresetName === "Custom" ? (
+              <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-0.5 text-[11px] font-mono font-medium text-amber-300">
+                Custom
+              </span>
+            ) : (
               <span className="rounded-full border border-[#ff5511]/30 bg-[#ff5511]/10 px-2.5 py-0.5 text-[11px] font-mono font-medium text-[#ff5511]">
                 {currentPresetName}
               </span>
             )}
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Presets Selector Dropdown */}
-            <div className="flex items-center gap-2 rounded-xl border-2 border-white/10 bg-[#282830] px-3 py-1.5 text-xs">
-              <Sliders className="h-3.5 w-3.5 text-zinc-400" />
-              <span className="text-zinc-400 font-mono text-[11px]">Preset:</span>
-              <select
-                value={currentPresetName}
-                onChange={(e) => applyPreset(e.target.value)}
-                className="bg-transparent text-white font-medium focus:outline-none cursor-pointer text-xs"
-              >
-                <option value="Custom" className="bg-[#202026] text-white">
-                  Custom
-                </option>
-                {EQ_PRESETS.map((p) => (
-                  <option key={p.name} value={p.name} className="bg-[#202026] text-white">
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+          <button
+            type="button"
+            onClick={handleResetFlat}
+            className="flex items-center gap-1.5 rounded-xl border-2 border-white/10 bg-[#282830] hover:bg-[#32323c] hover:border-white/20 px-3.5 py-1.5 text-xs font-medium text-zinc-200 hover:text-white transition-all cursor-pointer"
+            title="Reset all 10 bands to 0 dB flat"
+          >
+            <RotateCcw className="h-3.5 w-3.5 text-zinc-400" />
+            <span>Reset flat</span>
+          </button>
+        </div>
 
-            {/* Reset flat button */}
-            <button
-              type="button"
-              onClick={handleResetFlat}
-              className="flex items-center gap-2 rounded-xl border-2 border-white/10 bg-[#282830] hover:bg-[#32323c] hover:border-white/20 px-3.5 py-2 text-xs font-medium text-zinc-200 hover:text-white transition-colors cursor-pointer"
-            >
-              <RotateCcw className="h-3.5 w-3.5" />
-              <span>Reset flat</span>
-            </button>
+        {/* Quick Presets Grid */}
+        <div className="flex flex-col gap-2">
+          <span className="text-[10px] font-mono uppercase tracking-widest text-zinc-500">
+            Presets
+          </span>
+          <div className="flex flex-wrap gap-2">
+            {EQ_PRESETS.map((p) => {
+              const isActive = currentPresetName === p.name;
+              return (
+                <button
+                  key={p.name}
+                  type="button"
+                  onClick={() => applyPreset(p.name)}
+                  className={`flex items-center gap-2 rounded-2xl px-4 py-2 text-xs font-semibold transition-all cursor-pointer border-2 ${
+                    isActive
+                      ? "border-[#ff5511] bg-[#ff5511] text-white shadow-md shadow-[#ff5511]/20"
+                      : "border-transparent bg-[#16161b] text-zinc-400 hover:border-transparent hover:text-white hover:bg-[#282830]"
+                  }`}
+                >
+                  <span>{p.name}</span>
+                </button>
+              );
+            })}
           </div>
         </div>
 
