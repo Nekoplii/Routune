@@ -52,8 +52,8 @@ pub trait TelemetryMetricsProvider: Send + Sync {
         &self,
         _app_id: u32,
         _target_channel: proto::AudioChannel,
-    ) -> Result<(), &'static str> {
-        Ok(())
+    ) -> Result<Option<String>, &'static str> {
+        Ok(None)
     }
     fn toggle_ai_noise(
         &self,
@@ -163,7 +163,7 @@ impl TelemetryMetricsProvider for crate::pipewire_bridge::PipeWireBridgeService 
         &self,
         app_id: u32,
         target_channel: proto::AudioChannel,
-    ) -> Result<(), &'static str> {
+    ) -> Result<Option<String>, &'static str> {
         self.route_application(app_id, target_channel)
     }
 
@@ -439,8 +439,24 @@ impl proto::routune_control_server::RoutuneControl for ControlServiceImpl {
         };
 
         if let Some(ref provider) = self.provider {
-            if let Err(err) = provider.route_application(req.app_id, target_channel) {
-                return Err(Status::internal(format!("Failed to route application: {err}")));
+            match provider.route_application(req.app_id, target_channel) {
+                Ok(Some(app_ident)) => {
+                    if let Some(ref config_manager) = self.config_manager {
+                        let ch_str = match target_channel {
+                            proto::AudioChannel::Game => "game",
+                            proto::AudioChannel::Chat => "chat",
+                            proto::AudioChannel::Media => "media",
+                            proto::AudioChannel::Aux => "aux",
+                            proto::AudioChannel::Mic => "mic",
+                            proto::AudioChannel::Master => "master",
+                        };
+                        config_manager.set_app_route(&app_ident, ch_str).await;
+                    }
+                }
+                Ok(None) => {}
+                Err(err) => {
+                    return Err(Status::internal(format!("Failed to route application: {err}")));
+                }
             }
         }
         Ok(Response::new(proto::Empty {}))
@@ -1248,9 +1264,9 @@ mod tests {
                 &self,
                 app_id: u32,
                 target_channel: proto::AudioChannel,
-            ) -> Result<(), &'static str> {
+            ) -> Result<Option<String>, &'static str> {
                 *self.routed.lock().unwrap() = Some((app_id, target_channel));
-                Ok(())
+                Ok(Some("Spotify".to_string()))
             }
         }
 

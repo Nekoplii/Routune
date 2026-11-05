@@ -92,6 +92,23 @@ impl ConfigManager {
         let _ = self.save_tx.try_send(());
     }
 
+    pub async fn set_app_route(&self, app_identifier: impl Into<String>, target_channel: impl Into<String>) {
+        {
+            let mut guard = self.config.lock().await;
+            guard.set_app_route(app_identifier, target_channel);
+        }
+        let _ = self.save_tx.try_send(());
+    }
+
+    #[allow(dead_code)]
+    pub async fn remove_app_route(&self, app_identifier: &str) {
+        {
+            let mut guard = self.config.lock().await;
+            guard.remove_app_route(app_identifier);
+        }
+        let _ = self.save_tx.try_send(());
+    }
+
     pub async fn set_eq_band(&self, channel: VirtualChannel, band_index: usize, gain_db: f32) {
         {
             let mut guard = self.config.lock().await;

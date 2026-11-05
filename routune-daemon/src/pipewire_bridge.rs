@@ -111,6 +111,7 @@ pub struct PipeWireBridgeService {
     thread_handle: Option<JoinHandle<()>>,
     shutdown_sender: pw::channel::Sender<BridgeShutdown>,
     route_app_tx: pw::channel::Sender<AppRouteCommand>,
+    persistent_app_routes: Arc<std::sync::Mutex<std::collections::HashMap<String, AudioChannel>>>,
     discovered_apps: Arc<std::sync::Mutex<std::collections::HashMap<String, DiscoveredApp>>>,
     virtual_sinks: Arc<std::sync::Mutex<std::collections::HashMap<String, u32>>>,
     graph_controller: Arc<std::sync::Mutex<GraphController>>,
@@ -277,6 +278,22 @@ impl PipeWireBridgeService {
         let virtual_sinks: Arc<std::sync::Mutex<std::collections::HashMap<String, u32>>> =
             Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
 
+        let mut initial_app_routes = std::collections::HashMap::new();
+        if let Some(cfg) = config {
+            for (app, ch_str) in &cfg.app_routes {
+                let ch = match ch_str.to_lowercase().as_str() {
+                    "game" => AudioChannel::Game,
+                    "chat" => AudioChannel::Chat,
+                    "media" => AudioChannel::Media,
+                    "aux" => AudioChannel::Aux,
+                    "mic" => AudioChannel::Mic,
+                    _ => AudioChannel::Master,
+                };
+                initial_app_routes.insert(app.to_lowercase(), ch);
+            }
+        }
+        let persistent_app_routes = Arc::new(std::sync::Mutex::new(initial_app_routes));
+
         // Rendezvous channel to wait for thread startup outcome
         let (init_tx, init_rx) = std::sync::mpsc::sync_channel::<anyhow::Result<()>>(0);
 
@@ -308,6 +325,8 @@ impl PipeWireBridgeService {
 
         let t_discovered_apps = discovered_apps.clone();
         let t_virtual_sinks = virtual_sinks.clone();
+        let t_persistent_routes = persistent_app_routes.clone();
+        let t_route_app_tx_worker = route_app_tx.clone();
 
         let thread_handle = std::thread::Builder::new()
             .name("pipewire-bridge".into())
@@ -449,13 +468,67 @@ impl PipeWireBridgeService {
                                             .unwrap_or("")
                                             .to_string();
 
-                                        let target_obj = dict.get("target.object").map(|s| s.to_string());
-                                        let target_node = dict.get("target.node").and_then(|s| s.parse::<u32>().ok());
+                                        let mut target_obj = dict.get("target.object").map(|s| s.to_string());
+                                        let mut target_node = dict.get("target.node").and_then(|s| s.parse::<u32>().ok());
+
+                                        // Check if application has a persisted route configuration
+                                        let matched_channel = {
+                                            if let Ok(routes) = t_persistent_routes.lock() {
+                                                let app_name_low = app_name.to_lowercase();
+                                                let binary_low = binary.map(|b| b.to_lowercase());
+                                                let app_key_low = app_key.to_lowercase();
+
+                                                routes.get(&app_name_low)
+                                                    .or_else(|| binary_low.as_ref().and_then(|b| routes.get(b)))
+                                                    .or_else(|| routes.get(&app_key_low))
+                                                    .copied()
+                                            } else {
+                                                None
+                                            }
+                                        };
+
+                                        if let Some(target_ch) = matched_channel {
+                                            let sink_name = match target_ch {
+                                                AudioChannel::Game => "routune-game",
+                                                AudioChannel::Chat => "routune-chat",
+                                                AudioChannel::Media => "routune-media",
+                                                AudioChannel::Aux => "routune-aux",
+                                                AudioChannel::Mic => "routune-virtual-mic",
+                                                AudioChannel::Master => "routune-game",
+                                            };
+                                            let t_id = t_sinks_reg.lock().ok().and_then(|s| s.get(sink_name).copied());
+                                            target_obj = Some(sink_name.to_string());
+                                            target_node = t_id;
+
+                                            // Auto-route discovered stream to persisted channel
+                                            let _ = t_route_app_tx_worker.send(AppRouteCommand {
+                                                app_id: global.id,
+                                                target_channel: target_ch,
+                                            });
+
+                                            let nid = global.id;
+                                            let s_name = sink_name.to_string();
+                                            let t_id_str = t_id.map(|i| i.to_string());
+                                            std::thread::spawn(move || {
+                                                if let Some(ref tn) = t_id_str {
+                                                    let _ = std::process::Command::new("pw-metadata")
+                                                        .args([&nid.to_string(), "target.node", tn, "Spa:Id"])
+                                                        .output();
+                                                }
+                                                let _ = std::process::Command::new("pw-metadata")
+                                                    .args([&nid.to_string(), "target.object", &s_name])
+                                                    .output();
+                                            });
+                                        }
 
                                         if let Ok(mut apps) = t_apps_reg.lock() {
                                             if let Some(existing) = apps.get_mut(&app_key) {
                                                 if !existing.node_ids.contains(&global.id) {
                                                     existing.node_ids.push(global.id);
+                                                }
+                                                if matched_channel.is_some() {
+                                                    existing.target_object = target_obj.clone();
+                                                    existing.target_node = target_node;
                                                 }
                                                 // Sync new stream node to existing routing if already routed
                                                 if let Some(ref obj) = existing.target_object {
@@ -1033,6 +1106,7 @@ impl PipeWireBridgeService {
             thread_handle: Some(thread_handle),
             shutdown_sender,
             route_app_tx,
+            persistent_app_routes,
             discovered_apps,
             virtual_sinks,
             graph_controller: Arc::new(std::sync::Mutex::new(controller)),
@@ -1072,7 +1146,7 @@ impl PipeWireBridgeService {
         &self,
         app_id: u32,
         target_channel: AudioChannel,
-    ) -> Result<(), &'static str> {
+    ) -> Result<Option<String>, &'static str> {
         let (target_sink_name, friendly_name) = match target_channel {
             AudioChannel::Game => ("routune-game", "Routune Game"),
             AudioChannel::Chat => ("routune-chat", "Routune Chat"),
@@ -1086,18 +1160,31 @@ impl PipeWireBridgeService {
 
         // 1. Immediately update in-memory cache for all associated streams
         let mut target_node_ids = Vec::new();
+        let mut app_identifier = None;
         if let Ok(mut apps) = self.discovered_apps.lock() {
             for app in apps.values_mut() {
                 if app.id == app_id || app.node_ids.contains(&app_id) {
                     app.target_object = Some(target_sink_name.to_string());
                     app.target_node = target_id;
                     target_node_ids = app.node_ids.clone();
+                    let ident = if !app.name.is_empty() {
+                        app.name.clone()
+                    } else {
+                        app.app_key.split(':').next().unwrap_or(&app.app_key).to_string()
+                    };
+                    app_identifier = Some(ident);
                     break;
                 }
             }
         }
         if target_node_ids.is_empty() {
             target_node_ids.push(app_id);
+        }
+
+        if let Some(ref ident) = app_identifier {
+            if let Ok(mut persistent) = self.persistent_app_routes.lock() {
+                persistent.insert(ident.to_lowercase(), target_channel);
+            }
         }
 
         // 2. Dispatch to PipeWire loop for each stream node
@@ -1126,7 +1213,7 @@ impl PipeWireBridgeService {
         });
 
         info!("Routed application {app_id} to {friendly_name} ({target_sink_name}, target node id {target_id:?})");
-        Ok(())
+        Ok(app_identifier)
     }
 
     pub fn update_eq(

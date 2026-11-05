@@ -240,11 +240,35 @@ pub struct RoutuneConfig {
     pub spatial_audio: ChannelSpatialConfig,
     #[serde(default)]
     pub volume_boost: ChannelVolumeBoostConfig,
+    #[serde(default)]
+    pub app_routes: std::collections::HashMap<String, String>,
 }
 
 impl RoutuneConfig {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn get_app_route(&self, app_identifier: &str) -> Option<&str> {
+        let lower = app_identifier.to_lowercase();
+        self.app_routes.get(&lower).map(|s| s.as_str())
+            .or_else(|| self.app_routes.get(app_identifier).map(|s| s.as_str()))
+    }
+
+    pub fn set_app_route(&mut self, app_identifier: impl Into<String>, target_channel: impl Into<String>) {
+        let key = app_identifier.into().to_lowercase();
+        let val = target_channel.into();
+        if val.eq_ignore_ascii_case("master") || val.eq_ignore_ascii_case("unassigned") || val.is_empty() {
+            self.app_routes.remove(&key);
+        } else {
+            self.app_routes.insert(key, val);
+        }
+    }
+
+    pub fn remove_app_route(&mut self, app_identifier: &str) {
+        let lower = app_identifier.to_lowercase();
+        self.app_routes.remove(&lower);
+        self.app_routes.remove(app_identifier);
     }
 
     pub fn get_route(&self, channel: VirtualChannel) -> &str {
@@ -558,5 +582,32 @@ mod tests {
 
         let _ = fs::remove_file(&config_file);
         let _ = fs::remove_dir(&temp_dir);
+    }
+
+    #[test]
+    fn test_app_routes_persistence_and_lookup() {
+        let mut cfg = RoutuneConfig::new();
+        cfg.set_app_route("Spotify", "media");
+        cfg.set_app_route("Discord", "chat");
+        cfg.set_app_route("Cyberpunk2077.exe", "game");
+
+        assert_eq!(cfg.get_app_route("Spotify"), Some("media"));
+        assert_eq!(cfg.get_app_route("spotify"), Some("media"));
+        assert_eq!(cfg.get_app_route("discord"), Some("chat"));
+        assert_eq!(cfg.get_app_route("cyberpunk2077.exe"), Some("game"));
+        assert_eq!(cfg.get_app_route("UnknownApp"), None);
+
+        // Setting to master or unassigned removes route
+        cfg.set_app_route("Spotify", "master");
+        assert_eq!(cfg.get_app_route("spotify"), None);
+
+        cfg.remove_app_route("Discord");
+        assert_eq!(cfg.get_app_route("discord"), None);
+
+        // Serde roundtrip check
+        cfg.set_app_route("Steam", "game");
+        let json = serde_json::to_string(&cfg).expect("serialize");
+        let deserialized: RoutuneConfig = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(deserialized.get_app_route("steam"), Some("game"));
     }
 }
