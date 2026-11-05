@@ -18,6 +18,11 @@ use server::{ControlServiceImpl, TelemetryMetricsProvider};
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    let args: Vec<String> = std::env::args().collect();
+    if handle_cli(&args).await? {
+        return Ok(());
+    }
+
     audio::silence_alsa_logging();
     tracing_subscriber::fmt::init();
 
@@ -204,4 +209,68 @@ async fn main() -> Result<()> {
     info!("Routune daemon shutdown complete.");
 
     Ok(())
+}
+
+fn parse_channel(s: &str) -> Result<server::proto::AudioChannel> {
+    match s.to_lowercase().as_str() {
+        "master" => Ok(server::proto::AudioChannel::Master),
+        "game" => Ok(server::proto::AudioChannel::Game),
+        "chat" => Ok(server::proto::AudioChannel::Chat),
+        "media" => Ok(server::proto::AudioChannel::Media),
+        "aux" => Ok(server::proto::AudioChannel::Aux),
+        "mic" => Ok(server::proto::AudioChannel::Mic),
+        other => anyhow::bail!("Unknown channel: '{other}'. Expected: master, game, chat, media, aux, mic"),
+    }
+}
+
+async fn handle_cli(args: &[String]) -> Result<bool> {
+    if args.len() <= 1 {
+        return Ok(false);
+    }
+
+    let cmd = args[1].as_str();
+    match cmd {
+        "--toggle-mute" | "-m" => {
+            let channel_name = args.get(2).map(|s| s.as_str()).unwrap_or("mic");
+            let channel = parse_channel(channel_name)?;
+            let mut client = server::proto::routune_control_client::RoutuneControlClient::connect("http://127.0.0.1:50051").await?;
+            let config = client.get_daemon_config(server::proto::Empty {}).await?.into_inner();
+            let current_muted = config.channels.iter().find(|m| m.channel == channel as i32).map(|m| m.muted).unwrap_or(false);
+            let next_muted = !current_muted;
+            client.set_channel_mute(server::proto::ChannelMuteRequest {
+                channel: channel as i32,
+                muted: next_muted,
+            }).await?;
+            println!("{channel_name} mute: {next_muted}");
+            Ok(true)
+        }
+        "--toggle-noise" | "-n" => {
+            let channel_name = args.get(2).map(|s| s.as_str()).unwrap_or("mic");
+            let channel = parse_channel(channel_name)?;
+            let mut client = server::proto::routune_control_client::RoutuneControlClient::connect("http://127.0.0.1:50051").await?;
+            let config = client.get_daemon_config(server::proto::Empty {}).await?.into_inner();
+            let current_noise = config.channels.iter().find(|n| n.channel == channel as i32).map(|n| n.noise_cancellation).unwrap_or(false);
+            let next_noise = !current_noise;
+            client.toggle_ai_noise(server::proto::AiNoiseRequest {
+                channel: channel as i32,
+                enabled: next_noise,
+                level: 1.0,
+            }).await?;
+            println!("{channel_name} noise cancellation: {next_noise}");
+            Ok(true)
+        }
+        "--help" | "-h" => {
+            println!("Routune Audio Daemon CLI");
+            println!("Usage: routune-daemon [OPTIONS]");
+            println!();
+            println!("Options:");
+            println!("  --toggle-mute <channel>   Toggle channel mute (mic, master, game, chat, media, aux)");
+            println!("  --toggle-noise <channel>  Toggle AI noise suppression (mic)");
+            println!("  --help, -h                Show this help");
+            println!();
+            println!("When invoked without arguments, starts the background audio routing daemon.");
+            Ok(true)
+        }
+        _ => Ok(false),
+    }
 }
