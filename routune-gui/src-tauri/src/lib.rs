@@ -135,8 +135,76 @@ fn get_app_icon(icon_name: String, app_name: Option<String>) -> Option<String> {
     }
 }
 
+#[cfg(target_os = "linux")]
+#[repr(C)]
+struct GLogField {
+    key: *const std::ffi::c_char,
+    value: *const std::ffi::c_void,
+    length: isize,
+}
+
+#[cfg(target_os = "linux")]
+unsafe extern "C" fn structured_log_writer(
+    log_level: std::ffi::c_uint,
+    fields: *const GLogField,
+    n_fields: usize,
+    user_data: *mut std::ffi::c_void,
+) -> std::ffi::c_int {
+    if !fields.is_null() {
+        for i in 0..n_fields {
+            let field = unsafe { &*fields.add(i) };
+            if !field.key.is_null() && !field.value.is_null() {
+                let key = unsafe { std::ffi::CStr::from_ptr(field.key).to_string_lossy() };
+                if key == "MESSAGE" {
+                    let msg: std::borrow::Cow<str> = if field.length < 0 {
+                        unsafe { std::ffi::CStr::from_ptr(field.value as *const std::ffi::c_char).to_string_lossy() }
+                    } else {
+                        let slice = unsafe { std::slice::from_raw_parts(field.value as *const u8, field.length as usize) };
+                        String::from_utf8_lossy(slice).into_owned().into()
+                    };
+                    if msg.contains("gtk_window_set_titlebar") {
+                        return 1; // G_LOG_WRITER_HANDLED — suppress
+                    }
+                    break;
+                }
+            }
+        }
+    }
+    unsafe extern "C" {
+        fn g_log_writer_default(
+            log_level: std::ffi::c_uint,
+            fields: *const GLogField,
+            n_fields: usize,
+            user_data: *mut std::ffi::c_void,
+        ) -> std::ffi::c_int;
+    }
+    unsafe { g_log_writer_default(log_level, fields, n_fields, user_data) }
+}
+
+#[cfg(target_os = "linux")]
+fn silence_gtk_warnings() {
+    unsafe extern "C" {
+        fn g_log_set_writer_func(
+            func: unsafe extern "C" fn(
+                std::ffi::c_uint,
+                *const GLogField,
+                usize,
+                *mut std::ffi::c_void,
+            ) -> std::ffi::c_int,
+            user_data: *mut std::ffi::c_void,
+            user_data_free: *const std::ffi::c_void,
+        );
+    }
+    unsafe {
+        g_log_set_writer_func(structured_log_writer, std::ptr::null_mut(), std::ptr::null());
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(target_os = "linux")]
+    silence_gtk_warnings();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
