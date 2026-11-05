@@ -11,7 +11,10 @@ import {
   RotateCcw,
   Volume2,
   Mic,
-  Sparkles,
+  Gamepad2,
+  MessageSquare,
+  Music,
+  Radio,
   Info,
   RefreshCw,
 } from "lucide-react";
@@ -19,6 +22,7 @@ import {
   useSettingsStore,
   type GlobalShortcuts,
 } from "../store/useSettingsStore";
+import { useShortcutStatus } from "../hooks/useGlobalShortcuts";
 import { useAudioStore } from "../store/useAudioStore";
 import { routuneClient } from "../services/grpcClient";
 import {
@@ -136,6 +140,7 @@ function ToggleRow({ label, description, checked, onChange, note, disabled, divi
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 export function Settings() {
+  const shortcutStatus = useShortcutStatus();
   const {
     runOnStartup,
     startMinimized,
@@ -178,6 +183,7 @@ export function Settings() {
   // Keyboard shortcut capture
   useEffect(() => {
     if (!recordingKey) return;
+    document.body.dataset.recordingShortcut = recordingKey;
     const onKeyDown = (e: KeyboardEvent) => {
       e.preventDefault();
       e.stopPropagation();
@@ -198,8 +204,11 @@ export function Settings() {
       setRecordingKey(null);
       flash(`Shortcut for "${actionLabel(recordingKey)}" set to ${combo}`);
     };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    window.addEventListener("keydown", onKeyDown, { capture: true });
+    return () => {
+      delete document.body.dataset.recordingShortcut;
+      window.removeEventListener("keydown", onKeyDown, { capture: true });
+    };
   }, [recordingKey, setShortcut]);
 
   const flash = (msg: string) => {
@@ -207,10 +216,16 @@ export function Settings() {
     setTimeout(() => setFeedbackMsg((cur) => cur === msg ? null : cur), 3000);
   };
 
-  const actionLabel = (k: keyof GlobalShortcuts) =>
-    k === "muteMic" ? "Mute Microphone"
-    : k === "muteMaster" ? "Mute Master"
-    : "Toggle AI Noise";
+  const actionLabel = (k: keyof GlobalShortcuts) => {
+    switch (k) {
+      case "muteMic": return "Mute Microphone";
+      case "muteMaster": return "Mute Master Audio";
+      case "muteGame": return "Mute Game Audio";
+      case "muteChat": return "Mute Chat Audio";
+      case "muteMedia": return "Mute Media Audio";
+      case "muteAux": return "Mute Aux Audio";
+    }
+  };
 
   // Export config
   const handleExport = () => {
@@ -251,9 +266,12 @@ export function Settings() {
       if (s.latencyMode) setLatencyMode(s.latencyMode);
       if (s.shortcuts) {
         const sc = s.shortcuts;
-        if (sc.muteMic) setShortcut("muteMic", sc.muteMic);
-        if (sc.muteMaster) setShortcut("muteMaster", sc.muteMaster);
-        if (sc.toggleAiNoise) setShortcut("toggleAiNoise", sc.toggleAiNoise);
+        if (sc.muteMic !== undefined) setShortcut("muteMic", sc.muteMic);
+        if (sc.muteMaster !== undefined) setShortcut("muteMaster", sc.muteMaster);
+        if (sc.muteGame !== undefined) setShortcut("muteGame", sc.muteGame);
+        if (sc.muteChat !== undefined) setShortcut("muteChat", sc.muteChat);
+        if (sc.muteMedia !== undefined) setShortcut("muteMedia", sc.muteMedia);
+        if (sc.muteAux !== undefined) setShortcut("muteAux", sc.muteAux);
       }
       flash("Configuration imported.");
     } catch { flash("Invalid file format."); }
@@ -327,10 +345,28 @@ export function Settings() {
       icon: <Volume2 className="h-4 w-4" />,
     },
     {
-      key: "toggleAiNoise",
-      label: "Toggle AI Noise Suppression",
-      sub: "Enable or disable RNNoise neural filter on the fly",
-      icon: <Sparkles className="h-4 w-4 text-[#ff5511]" />,
+      key: "muteGame",
+      label: "Mute Game Audio",
+      sub: "Toggle mute for Game virtual channel",
+      icon: <Gamepad2 className="h-4 w-4 text-emerald-400" />,
+    },
+    {
+      key: "muteChat",
+      label: "Mute Chat Audio",
+      sub: "Toggle mute for Chat virtual channel",
+      icon: <MessageSquare className="h-4 w-4 text-cyan-400" />,
+    },
+    {
+      key: "muteMedia",
+      label: "Mute Media Audio",
+      sub: "Toggle mute for Media virtual channel",
+      icon: <Music className="h-4 w-4 text-amber-400" />,
+    },
+    {
+      key: "muteAux",
+      label: "Mute Aux Audio",
+      sub: "Toggle mute for Aux virtual channel",
+      icon: <Radio className="h-4 w-4 text-purple-400" />,
     },
   ];
 
@@ -485,6 +521,20 @@ export function Settings() {
             );
           })}
         </div>
+
+        {/* Registration status */}
+        {shortcutStatus.length > 0 && (
+          <div className="flex flex-col gap-1.5 rounded-xl border border-white/5 bg-[#16161b] px-3.5 py-2.5">
+            <span className="text-[10px] font-mono uppercase tracking-widest text-zinc-500">Registration status</span>
+            {shortcutStatus.map((s) => (
+              <div key={s.key} className="flex items-center gap-2 text-[11px] font-mono">
+                <span className={s.ok ? "text-emerald-400" : "text-rose-400"}>{s.ok ? "✓" : "✗"}</span>
+                <span className="text-zinc-300">{s.accelerator}</span>
+                {!s.ok && <span className="text-rose-400 truncate">{s.error}</span>}
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Info callout */}
         <div className="flex items-center gap-2.5 rounded-xl sm:rounded-2xl border border-white/5 bg-[#16161b] px-3.5 sm:px-4 py-2.5 text-xs font-mono text-zinc-400">

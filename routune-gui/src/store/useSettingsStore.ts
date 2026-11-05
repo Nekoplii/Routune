@@ -6,7 +6,10 @@ export type LatencyMode = "ultra_low" | "balanced" | "stable";
 export interface GlobalShortcuts {
   muteMic: string;
   muteMaster: string;
-  toggleAiNoise: string;
+  muteGame: string;
+  muteChat: string;
+  muteMedia: string;
+  muteAux: string;
 }
 
 export interface SettingsState {
@@ -38,7 +41,10 @@ const DEFAULT_SETTINGS = {
   shortcuts: {
     muteMic: "Ctrl+M",
     muteMaster: "Ctrl+Shift+M",
-    toggleAiNoise: "Ctrl+Shift+N",
+    muteGame: "",
+    muteChat: "",
+    muteMedia: "",
+    muteAux: "",
   },
 };
 

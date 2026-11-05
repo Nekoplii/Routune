@@ -200,6 +200,102 @@ fn silence_gtk_warnings() {
     }
 }
 
+#[tauri::command]
+fn sync_hyprland_shortcuts(
+    mute_mic: String,
+    mute_master: String,
+    mute_game: String,
+    mute_chat: String,
+    mute_media: String,
+    mute_aux: String,
+) -> Result<bool, String> {
+    #[cfg(target_os = "linux")]
+    {
+        let home = std::env::var("HOME").map_err(|e| e.to_string())?;
+        let hypr_dir = std::path::Path::new(&home).join(".config/hypr");
+        let hypr_lua = hypr_dir.join("hyprland.lua");
+
+        if !hypr_lua.exists() {
+            return Ok(false);
+        }
+
+        // Ensure ~/.local/bin/routune-daemon symlink exists
+        let local_bin = std::path::Path::new(&home).join(".local/bin");
+        let symlink_path = local_bin.join("routune-daemon");
+        if !symlink_path.exists() {
+            let _ = std::fs::create_dir_all(&local_bin);
+            if let Ok(exe) = std::env::current_exe() {
+                if let Some(bin_dir) = exe.parent() {
+                    let candidate = bin_dir.join("routune-daemon");
+                    if candidate.exists() {
+                        let _ = std::os::unix::fs::symlink(candidate, &symlink_path);
+                    }
+                }
+            }
+        }
+
+        // Ensure hyprland.lua contains optional("routune")
+        if let Ok(content) = std::fs::read_to_string(&hypr_lua) {
+            if !content.contains("optional(\"routune\")") {
+                let updated = format!("{}\n\n-- Routune hotkeys (the app owns it)\noptional(\"routune\")\n", content.trim_end());
+                let _ = std::fs::write(&hypr_lua, updated);
+            }
+        }
+
+        fn to_hypr_combo(combo: &str) -> Option<String> {
+            let trimmed = combo.trim();
+            if trimmed.is_empty() {
+                return None;
+            }
+            let parts: Vec<String> = trimmed.split('+').map(|p| {
+                match p.trim().to_uppercase().as_str() {
+                    "CTRL" | "CMDORCTRL" => "CTRL".to_string(),
+                    "CMD" | "SUPER" => "SUPER".to_string(),
+                    "ALT" => "ALT".to_string(),
+                    "SHIFT" => "SHIFT".to_string(),
+                    other => other.to_string(),
+                }
+            }).collect();
+            Some(parts.join(" + "))
+        }
+
+        let mut lua_content = String::from("-- Routune Global Shortcuts (managed automatically by Routune)\n");
+        if let Some(c) = to_hypr_combo(&mute_mic) {
+            lua_content.push_str(&format!("hl.bind(\"{c}\", hl.dsp.exec_cmd(\"routune-daemon --toggle-mute mic\"))\n"));
+        }
+        if let Some(c) = to_hypr_combo(&mute_master) {
+            lua_content.push_str(&format!("hl.bind(\"{c}\", hl.dsp.exec_cmd(\"routune-daemon --toggle-mute master\"))\n"));
+        }
+        if let Some(c) = to_hypr_combo(&mute_game) {
+            lua_content.push_str(&format!("hl.bind(\"{c}\", hl.dsp.exec_cmd(\"routune-daemon --toggle-mute game\"))\n"));
+        }
+        if let Some(c) = to_hypr_combo(&mute_chat) {
+            lua_content.push_str(&format!("hl.bind(\"{c}\", hl.dsp.exec_cmd(\"routune-daemon --toggle-mute chat\"))\n"));
+        }
+        if let Some(c) = to_hypr_combo(&mute_media) {
+            lua_content.push_str(&format!("hl.bind(\"{c}\", hl.dsp.exec_cmd(\"routune-daemon --toggle-mute media\"))\n"));
+        }
+        if let Some(c) = to_hypr_combo(&mute_aux) {
+            lua_content.push_str(&format!("hl.bind(\"{c}\", hl.dsp.exec_cmd(\"routune-daemon --toggle-mute aux\"))\n"));
+        }
+
+        let routune_lua = hypr_dir.join("routune.lua");
+        std::fs::write(&routune_lua, lua_content).map_err(|e| e.to_string())?;
+
+        // Reload Hyprland config dynamically
+        let _ = std::process::Command::new("hyprctl")
+            .args(["reload", "config-only"])
+            .status();
+
+        Ok(true)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (mute_mic, mute_master, mute_game, mute_chat, mute_media, mute_aux);
+        Ok(false)
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     #[cfg(target_os = "linux")]
@@ -218,7 +314,8 @@ pub fn run() {
             app_close,
             app_is_maximized,
             get_platform,
-            get_app_icon
+            get_app_icon,
+            sync_hyprland_shortcuts
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

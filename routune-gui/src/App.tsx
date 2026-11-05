@@ -7,10 +7,13 @@ import { Settings } from "./components/Settings";
 import { AboutView } from "./components/AboutView";
 import { useAudioStore } from "./store/useAudioStore";
 import { useTelemetryStream } from "./hooks/useTelemetryStream";
+import { useGlobalShortcuts } from "./hooks/useGlobalShortcuts";
 
 export function App() {
   // Start 60FPS gRPC-Web telemetry and heartbeat loop with RAF throttling
   useTelemetryStream();
+  // Register system-wide hotkeys from persisted settings
+  useGlobalShortcuts();
 
   const activeView = useAudioStore((s) => s.activeView);
 
