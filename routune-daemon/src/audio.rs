@@ -688,8 +688,12 @@ impl ChannelRouter {
         unsafe {
             std::env::set_var("PULSE_PROP_node.name", "routune-mic-dsp-out");
             std::env::set_var("PULSE_PROP_media.class", "Stream/Output/Audio");
-            std::env::set_var("PIPEWIRE_NODE", "routune-mic-dsp-out");
-            std::env::set_var("PIPEWIRE_PROPS", "node.name=routune-mic-dsp-out media.class=Stream/Output/Audio");
+            std::env::set_var("PIPEWIRE_NODE", "routune-virtual-mic");
+            std::env::set_var("PIPEWIRE_AUTOCONNECT", "false");
+            std::env::set_var(
+                "PIPEWIRE_PROPS",
+                "node.name=routune-mic-dsp-out media.class=Stream/Output/Audio node.autoconnect=false target.object=routune-virtual-mic",
+            );
         }
 
         let is_active = Arc::new(AtomicBool::new(false));
@@ -718,6 +722,7 @@ impl ChannelRouter {
             std::env::remove_var("PULSE_PROP_node.name");
             std::env::remove_var("PULSE_PROP_media.class");
             std::env::remove_var("PIPEWIRE_NODE");
+            std::env::remove_var("PIPEWIRE_AUTOCONNECT");
             std::env::remove_var("PIPEWIRE_PROPS");
         }
 
@@ -1218,9 +1223,7 @@ impl ChannelRouter {
     }
 
     pub fn set_mic_test(&self, enabled: bool) {
-        if enabled {
-            self.pusher.mic_test.clear();
-        }
+        self.pusher.mic_test.clear();
         self.pusher.mic_test_enabled.store(enabled, Ordering::Relaxed);
     }
 
