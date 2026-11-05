@@ -590,6 +590,9 @@ pub struct ChannelRouter {
 unsafe impl Send for ChannelRouter {}
 
 pub fn enumerate_host_devices(host: &cpal::Host) -> Vec<cpal::Device> {
+    #[cfg(target_os = "linux")]
+    let _silence = StderrSilencer::new();
+
     if let Ok(devs) = host.devices() {
         return devs.collect();
     }
@@ -597,6 +600,18 @@ pub fn enumerate_host_devices(host: &cpal::Host) -> Vec<cpal::Device> {
         return devs.collect();
     }
     Vec::new()
+}
+
+pub fn extract_card_name(name: &str) -> Option<String> {
+    let lower = name.to_lowercase();
+    if let Some(card_idx) = lower.find("card=") {
+        let after_card = &name[card_idx + 5..];
+        let card_raw = after_card.split(',').next().unwrap_or(after_card).trim();
+        if !card_raw.is_empty() {
+            return Some(card_raw.to_string());
+        }
+    }
+    None
 }
 
 impl ChannelRouter {
@@ -656,6 +671,9 @@ impl ChannelRouter {
     }
 
     pub fn start_mic_dsp_output_stream(&mut self) -> Result<()> {
+        #[cfg(target_os = "linux")]
+        let _silence = StderrSilencer::new();
+
         let device = self.find_device("default")
             .or_else(|| self.host.default_output_device())
             .or_else(|| {
@@ -818,6 +836,9 @@ impl ChannelRouter {
     }
 
     pub fn set_channel_routing(&mut self, channel: i32, target_device_name: &str) -> Result<String> {
+        #[cfg(target_os = "linux")]
+        let _silence = StderrSilencer::new();
+
         let trimmed = target_device_name.trim();
 
         // Special handling for Mic (Channel 5): physical capture stream
@@ -983,20 +1004,49 @@ impl ChannelRouter {
             }
         }
 
-        // 2. Fallback: match hardware device by .contains() using clean display_name
+        // 2. Exact ALSA CARD parameter match (e.g. sysdefault:CARD=Device vs front:CARD=Device,DEV=0)
+        if let Some(q_card) = extract_card_name(q_trimmed) {
+            let mut card_matches: Vec<(cpal::Device, i32)> = Vec::new();
+            for dev in &devices {
+                if let Ok(name) = dev.name() {
+                    if is_rejected_device_name(&name) {
+                        continue;
+                    }
+                    if let Some(d_card) = extract_card_name(&name) {
+                        if d_card.eq_ignore_ascii_case(&q_card) {
+                            let priority = device_id_priority(&name);
+                            card_matches.push((dev.clone(), priority));
+                        }
+                    }
+                }
+            }
+            if !card_matches.is_empty() {
+                card_matches.sort_by_key(|a| std::cmp::Reverse(a.1));
+                return Some(card_matches.remove(0).0);
+            }
+        }
+
+        // 3. Match hardware device by clean display_name comparison
+        let q_disp = format_device_display_name(q_trimmed).to_lowercase();
+        let mut disp_matches: Vec<(cpal::Device, i32)> = Vec::new();
         for dev in &devices {
             if let Ok(name) = dev.name() {
                 if is_rejected_device_name(&name) {
                     continue;
                 }
                 let disp = format_device_display_name(&name).to_lowercase();
-                if disp.contains(&q_lower) || q_lower.contains(&disp) {
-                    return Some(dev.clone());
+                if disp == q_disp || disp.contains(&q_lower) || q_lower.contains(&disp) || disp.contains(&q_disp) || q_disp.contains(&disp) {
+                    let priority = device_id_priority(&name);
+                    disp_matches.push((dev.clone(), priority));
                 }
             }
         }
+        if !disp_matches.is_empty() {
+            disp_matches.sort_by_key(|a| std::cmp::Reverse(a.1));
+            return Some(disp_matches.remove(0).0);
+        }
 
-        // 3. Fallback: match by raw name substring
+        // 4. Fallback: match by raw name substring
         for dev in &devices {
             if let Ok(name) = dev.name() {
                 if is_rejected_device_name(&name) {
@@ -1008,8 +1058,9 @@ impl ChannelRouter {
             }
         }
 
-        // 4. Physical device heuristic matching (ryzen, usb, etc.)
+        // 5. Physical device heuristic matching (ryzen, usb, etc.)
         find_physical_output_device(&self.host, query)
+            .or_else(|| find_physical_output_device(&self.host, &q_disp))
     }
 
     fn find_input_device(&self, query: &str) -> Option<cpal::Device> {
@@ -1029,20 +1080,49 @@ impl ChannelRouter {
             }
         }
 
-        // 2. Fallback: match hardware device by .contains() using clean display_name
+        // 2. Exact ALSA CARD parameter match for capture devices
+        if let Some(q_card) = extract_card_name(q_trimmed) {
+            let mut card_matches: Vec<(cpal::Device, i32)> = Vec::new();
+            for dev in &devices {
+                if let Ok(name) = dev.name() {
+                    if is_rejected_device_name(&name) {
+                        continue;
+                    }
+                    if let Some(d_card) = extract_card_name(&name) {
+                        if d_card.eq_ignore_ascii_case(&q_card) {
+                            let priority = device_id_priority(&name);
+                            card_matches.push((dev.clone(), priority));
+                        }
+                    }
+                }
+            }
+            if !card_matches.is_empty() {
+                card_matches.sort_by_key(|a| std::cmp::Reverse(a.1));
+                return Some(card_matches.remove(0).0);
+            }
+        }
+
+        // 3. Fallback: match hardware device by clean input display_name
+        let q_disp = format_input_device_display_name(q_trimmed).to_lowercase();
+        let mut disp_matches: Vec<(cpal::Device, i32)> = Vec::new();
         for dev in &devices {
             if let Ok(name) = dev.name() {
                 if is_rejected_device_name(&name) {
                     continue;
                 }
                 let disp = format_input_device_display_name(&name).to_lowercase();
-                if disp.contains(&q_lower) || q_lower.contains(&disp) {
-                    return Some(dev.clone());
+                if disp == q_disp || disp.contains(&q_lower) || q_lower.contains(&disp) || disp.contains(&q_disp) || q_disp.contains(&disp) {
+                    let priority = device_id_priority(&name);
+                    disp_matches.push((dev.clone(), priority));
                 }
             }
         }
+        if !disp_matches.is_empty() {
+            disp_matches.sort_by_key(|a| std::cmp::Reverse(a.1));
+            return Some(disp_matches.remove(0).0);
+        }
 
-        // 3. Fallback: match by raw name substring
+        // 4. Fallback: match by raw name substring
         for dev in &devices {
             if let Ok(name) = dev.name() {
                 if is_rejected_device_name(&name) {
@@ -1054,7 +1134,7 @@ impl ChannelRouter {
             }
         }
 
-        // 4. Fallback: semantic keyword matching (ryzen / generic_1 / alc / usb)
+        // 5. Fallback: semantic keyword matching (ryzen / generic_1 / alc / usb)
         for dev in &devices {
             if let Ok(name) = dev.name() {
                 if is_rejected_device_name(&name) {
@@ -1146,6 +1226,20 @@ impl ChannelRouter {
 
     pub fn is_mic_test_enabled(&self) -> bool {
         self.pusher.mic_test_enabled.load(Ordering::Relaxed)
+    }
+
+    pub fn is_channel_stream_active(&self, channel: i32) -> bool {
+        self.routes
+            .get(&channel)
+            .map(|r| r.output_stream.is_some() && r.is_active.load(Ordering::Relaxed))
+            .unwrap_or(false)
+    }
+
+    #[allow(dead_code)]
+    pub fn get_channel_target(&self, channel: i32) -> Option<String> {
+        self.routes
+            .get(&channel)
+            .and_then(|r| r.target_device.clone())
     }
 
     pub fn try_recv_death_signal(&self) -> Option<StreamDeathSignal> {
@@ -1568,6 +1662,19 @@ fn format_device_display_name_internal(name: &str, is_input: bool) -> String {
 
     resolve_hardware_card_name(cleaned, is_input)
 }
+
+#[cfg(target_os = "linux")]
+pub fn silence_alsa_logging() {
+    unsafe extern "C" {
+        fn snd_lib_error_set_handler(handler: *const ()) -> libc::c_int;
+    }
+    unsafe {
+        snd_lib_error_set_handler(std::ptr::null());
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn silence_alsa_logging() {}
 
 #[cfg(target_os = "linux")]
 struct StderrSilencer {
@@ -2209,6 +2316,15 @@ mod tests {
     }
 
     #[test]
+    fn test_extract_card_name() {
+        assert_eq!(extract_card_name("sysdefault:CARD=Device"), Some("Device".to_string()));
+        assert_eq!(extract_card_name("front:CARD=Generic_1,DEV=0"), Some("Generic_1".to_string()));
+        assert_eq!(extract_card_name("hw:CARD=Audio,DEV=1"), Some("Audio".to_string()));
+        assert_eq!(extract_card_name("pipewire"), None);
+        assert_eq!(extract_card_name("default"), None);
+    }
+
+    #[test]
     fn test_hardware_outputs_deduplication_and_usb_presence() {
         let (router, _) = ChannelRouter::new();
         let outputs = router.get_hardware_outputs();
@@ -2233,6 +2349,7 @@ mod tests {
 
     #[test]
     fn test_device_resolution_and_fallback_matching() {
+        silence_alsa_logging();
         let (mut router, _pusher) = ChannelRouter::new();
 
         // 1. Unassign channel
@@ -2242,6 +2359,11 @@ mod tests {
 
         // 2. Exact match on raw ID
         if let Some(dev) = router.find_device("sysdefault:CARD=Device") {
+            assert!(dev.name().unwrap().contains("Device"));
+        }
+
+        // 2b. Fallback match by ALSA CARD parameter
+        if let Some(dev) = router.find_device("front:CARD=Device,DEV=0") {
             assert!(dev.name().unwrap().contains("Device"));
         }
 

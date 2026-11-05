@@ -18,6 +18,7 @@ use server::{ControlServiceImpl, TelemetryMetricsProvider};
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    audio::silence_alsa_logging();
     tracing_subscriber::fmt::init();
 
     info!("Starting Routune audio daemon service");
@@ -36,7 +37,7 @@ async fn main() -> Result<()> {
         warn!("Failed to initialize virtual mic pipeline: {e}");
     }
 
-    // 3. Map physical hardware outputs from persistent configuration
+    // 3. Map physical hardware outputs from persistent configuration with startup retry backoff
     let routes = [
         (server::proto::AudioChannel::Game as i32, initial_config.get_route(VirtualChannel::Game)),
         (server::proto::AudioChannel::Chat as i32, initial_config.get_route(VirtualChannel::Chat)),
@@ -46,9 +47,20 @@ async fn main() -> Result<()> {
     ];
     for (ch, target) in routes {
         if !target.is_empty() && !target.eq_ignore_ascii_case("none") && !target.eq_ignore_ascii_case("unassigned") {
-            match channel_router.set_channel_routing(ch, target) {
-                Ok(act) => info!("Restored persisted hardware route for channel {ch} -> {act}"),
-                Err(e) => warn!("Failed to restore route for channel {ch} to {target}: {e}"),
+            for attempt in 1..=4 {
+                match channel_router.set_channel_routing(ch, target) {
+                    Ok(act) => {
+                        info!("Restored persisted hardware route for channel {ch} -> {act}");
+                        break;
+                    }
+                    Err(e) => {
+                        if attempt < 4 {
+                            std::thread::sleep(std::time::Duration::from_millis(150 * attempt as u64));
+                        } else {
+                            warn!("Failed to restore route for channel {ch} to {target} after {attempt} attempts: {e}");
+                        }
+                    }
+                }
             }
         }
     }
@@ -120,17 +132,49 @@ async fn main() -> Result<()> {
 
     // 5. Spawn background stream recovery supervisor task
     let recovery_router = channel_router.clone();
+    let recovery_config = config_manager.clone();
     let supervisor_handle = tokio::spawn(async move {
-        let mut interval = tokio::time::interval(std::time::Duration::from_millis(100));
+        let mut interval = tokio::time::interval(std::time::Duration::from_millis(500));
+        let mut loop_count = 0u32;
         loop {
             interval.tick().await;
+            loop_count = loop_count.wrapping_add(1);
+
             let death_signal = {
                 let router = recovery_router.lock().await;
                 router.try_recv_death_signal()
             };
 
-            if let Some(signal) = death_signal {
+            if let Some(ref signal) = death_signal {
                 warn!("Channel stream death signal received: {:?}. Audio routing handle released.", signal);
+            }
+
+            // Periodic auto-recovery check (on death signal or every 3 seconds)
+            if death_signal.is_some() || loop_count.is_multiple_of(6) {
+                let cfg = recovery_config.get_config().await;
+                let ch_targets = [
+                    (server::proto::AudioChannel::Game as i32, cfg.get_route(VirtualChannel::Game)),
+                    (server::proto::AudioChannel::Chat as i32, cfg.get_route(VirtualChannel::Chat)),
+                    (server::proto::AudioChannel::Media as i32, cfg.get_route(VirtualChannel::Media)),
+                    (server::proto::AudioChannel::Aux as i32, cfg.get_route(VirtualChannel::Aux)),
+                    (server::proto::AudioChannel::Mic as i32, cfg.get_route(VirtualChannel::Mic)),
+                ];
+
+                let mut router = recovery_router.lock().await;
+                for (ch_id, target) in ch_targets {
+                    if !target.is_empty() && !target.eq_ignore_ascii_case("none") && !target.eq_ignore_ascii_case("unassigned") {
+                        if !router.is_channel_stream_active(ch_id) {
+                            match router.set_channel_routing(ch_id, target) {
+                                Ok(act) => {
+                                    info!("Supervisor recovered/restored channel {ch_id} route -> {act}");
+                                }
+                                Err(e) => {
+                                    tracing::debug!("Supervisor recovery attempt for channel {ch_id} to {target}: {e}");
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     });
