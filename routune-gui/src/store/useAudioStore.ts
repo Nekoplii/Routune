@@ -70,6 +70,7 @@ interface AudioStoreState {
   channelNoiseEnabled: Record<number, boolean>;
   aiNoiseLevel: number;
   isTogglingAiNoise: Record<number, boolean>;
+  isTogglingChannelMute: Record<number, boolean>;
 
   // Mic Dynamics: Noise Gate & Compressor
   noiseGate: NoiseGateState;
@@ -354,6 +355,7 @@ export const useAudioStore = create<AudioStoreState>((set, get) => ({
   },
   aiNoiseLevel: initialCached.aiNoiseLevel ?? 1.0,
   isTogglingAiNoise: {},
+  isTogglingChannelMute: {},
 
   noiseGate: initialCached.noiseGate ?? DEFAULT_NOISE_GATE,
   compressor: initialCached.compressor ?? DEFAULT_COMPRESSOR,
@@ -549,18 +551,45 @@ export const useAudioStore = create<AudioStoreState>((set, get) => ({
         }
       }
 
-      set((s) => ({
-        channelFaderDb: { ...s.channelFaderDb, ...nextFaderDb },
-        channelMuted: { ...s.channelMuted, ...nextMuted },
-        channelRoutings: { ...s.channelRoutings, ...nextRoutings },
-        eqBands: { ...s.eqBands, ...nextEqBands },
-        channelNoiseEnabled: { ...s.channelNoiseEnabled, ...nextNoise },
-        spatialAudio: { ...s.spatialAudio, ...nextSpatialAudio },
-        volumeBoost: { ...s.volumeBoost, ...nextVolumeBoost },
-        ...(nextAiNoiseLevel !== undefined ? { aiNoiseLevel: nextAiNoiseLevel } : {}),
-        ...(nextNoiseGate ? { noiseGate: nextNoiseGate } : {}),
-        ...(nextCompressor ? { compressor: nextCompressor } : {}),
-      }));
+      set((s) => {
+        // Skip daemon-side values for channels currently being toggled optimistically
+        let mutedChanged = false;
+        const safeMuted = { ...s.channelMuted };
+        for (const [ch, val] of Object.entries(nextMuted)) {
+          const chNum = Number(ch);
+          if (!s.isTogglingChannelMute[chNum]) {
+            if (safeMuted[chNum] !== val) {
+              safeMuted[chNum] = val as boolean;
+              mutedChanged = true;
+            }
+          }
+        }
+
+        let noiseChanged = false;
+        const safeNoise = { ...s.channelNoiseEnabled };
+        for (const [ch, val] of Object.entries(nextNoise)) {
+          const chNum = Number(ch);
+          if (!s.isTogglingAiNoise[chNum]) {
+            if (safeNoise[chNum] !== val) {
+              safeNoise[chNum] = val as boolean;
+              noiseChanged = true;
+            }
+          }
+        }
+
+        return {
+          channelFaderDb: { ...s.channelFaderDb, ...nextFaderDb },
+          channelMuted: mutedChanged ? safeMuted : s.channelMuted,
+          channelRoutings: { ...s.channelRoutings, ...nextRoutings },
+          eqBands: { ...s.eqBands, ...nextEqBands },
+          channelNoiseEnabled: noiseChanged ? safeNoise : s.channelNoiseEnabled,
+          spatialAudio: { ...s.spatialAudio, ...nextSpatialAudio },
+          volumeBoost: { ...s.volumeBoost, ...nextVolumeBoost },
+          ...(nextAiNoiseLevel !== undefined ? { aiNoiseLevel: nextAiNoiseLevel } : {}),
+          ...(nextNoiseGate ? { noiseGate: nextNoiseGate } : {}),
+          ...(nextCompressor ? { compressor: nextCompressor } : {}),
+        };
+      });
 
       saveLocalConfig({
         channelFaderDb: nextFaderDb,
@@ -982,9 +1011,16 @@ export const useAudioStore = create<AudioStoreState>((set, get) => ({
       saveLocalConfig({ channelMuted: nextMutedMap });
       return {
         channelMuted: nextMutedMap,
+        isTogglingChannelMute: { ...s.isTogglingChannelMute, [channel]: true },
       };
     });
     dispatchChannelMute(channel, nextMuted);
+    // Clear the guard after daemon has had time to ACK and next heartbeat arrives
+    setTimeout(() => {
+      set((s) => ({
+        isTogglingChannelMute: { ...s.isTogglingChannelMute, [channel]: false },
+      }));
+    }, 1500);
   },
 }));
 

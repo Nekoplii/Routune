@@ -110,8 +110,24 @@ export function useTelemetryStream() {
 
     connectAndStream();
 
+    // Poll daemon config periodically and on window focus so external toggles (e.g. Hyprland shortcuts) sync to UI
+    const configSyncInterval = setInterval(() => {
+      if (!isCancelled && useAudioStore.getState().connectionStatus === "connected") {
+        useAudioStore.getState().fetchDaemonConfig();
+      }
+    }, 500);
+
+    const onFocus = () => {
+      if (!isCancelled && useAudioStore.getState().connectionStatus === "connected") {
+        useAudioStore.getState().fetchDaemonConfig();
+      }
+    };
+    window.addEventListener("focus", onFocus);
+
     return () => {
       isCancelled = true;
+      clearInterval(configSyncInterval);
+      window.removeEventListener("focus", onFocus);
       if (abortController) {
         abortController.abort();
       }
