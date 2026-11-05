@@ -387,6 +387,7 @@ export const useAudioStore = create<AudioStoreState>((set, get) => ({
 
   updateTelemetry: (peakDb, rmsDb, sequenceNumber, channelMetrics = []) =>
     set((s) => {
+      // Only sync aiNoiseEnabled flags if changed — avoids unnecessary re-renders
       let updatedNoise = s.channelNoiseEnabled;
       if (channelMetrics.length > 0) {
         let changed = false;
@@ -404,30 +405,14 @@ export const useAudioStore = create<AudioStoreState>((set, get) => ({
         }
       }
 
-      // Smooth peak hold decay
-      const nextHolds = { ...s.channelPeakHolds };
-      if (peakDb >= (nextHolds[AudioChannel.MASTER] ?? -100)) {
-        nextHolds[AudioChannel.MASTER] = peakDb;
-      } else {
-        nextHolds[AudioChannel.MASTER] = Math.max(-100, (nextHolds[AudioChannel.MASTER] ?? -100) - 0.4);
-      }
-
-      for (const metric of channelMetrics) {
-        const prev = nextHolds[metric.channel] ?? -100;
-        if (metric.peakVolumeDb >= prev) {
-          nextHolds[metric.channel] = metric.peakVolumeDb;
-        } else {
-          nextHolds[metric.channel] = Math.max(-100, prev - 0.4);
-        }
-      }
-
       return {
         peakDb,
         rmsDb,
         sequenceNumber,
         channelMetrics,
         channelNoiseEnabled: updatedNoise,
-        channelPeakHolds: nextHolds,
+        // channelPeakHolds intentionally omitted — peak hold is computed per-component
+        // in RAF loops via useAudioStore.getState(), causing zero React re-renders.
       };
     }),
 

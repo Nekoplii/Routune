@@ -1,7 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useAudioStore } from "../store/useAudioStore";
 
-// Converts dB value (-60dB to 0dB) to a linear 0-100 percentage
 function dbToPercent(db: number): number {
   if (db <= -60) return 0;
   if (db >= 0) return 100;
@@ -9,28 +8,59 @@ function dbToPercent(db: number): number {
 }
 
 export function VolumeMeter() {
-  // Subscribe to telemetry using specific selector
-  const peakDb = useAudioStore((s) => s.peakDb);
-  const rmsDb = useAudioStore((s) => s.rmsDb);
-  const isConnected = useAudioStore((s) => s.connectionStatus === "connected");
+  const peakBarRef   = useRef<HTMLDivElement>(null);
+  const rmsBarRef    = useRef<HTMLDivElement>(null);
+  const holdMarkerRef = useRef<HTMLDivElement>(null);
+  const peakLabelRef = useRef<HTMLSpanElement>(null);
+  const rmsLabelRef  = useRef<HTMLSpanElement>(null);
+  const clipBadgeRef = useRef<HTMLSpanElement>(null);
 
-  const peakHoldRef = useRef<number>(-100);
-  const peakHoldDecayTimer = useRef<number>(0);
+  const peakHoldRef      = useRef(-100);
+  const peakHoldTimerRef = useRef(0);
+  const rafRef           = useRef<number | null>(null);
 
-  // Smooth peak hold decay
   useEffect(() => {
-    if (peakDb > peakHoldRef.current) {
-      peakHoldRef.current = peakDb;
-      peakHoldDecayTimer.current = Date.now();
-    } else if (Date.now() - peakHoldDecayTimer.current > 1200) {
-      peakHoldRef.current = Math.max(-100, peakHoldRef.current - 0.5);
-    }
-  }, [peakDb]);
+    function loop() {
+      rafRef.current = requestAnimationFrame(loop);
 
-  const peakPct = isConnected ? dbToPercent(peakDb) : 0;
-  const rmsPct = isConnected ? dbToPercent(rmsDb) : 0;
-  const peakHoldPct = isConnected ? dbToPercent(peakHoldRef.current) : 0;
-  const isClipping = peakDb >= -0.1;
+      const state = useAudioStore.getState();
+      const isConnected = state.connectionStatus === "connected";
+      const peakDb = isConnected ? state.peakDb : -100;
+      const rmsDb  = isConnected ? state.rmsDb  : -100;
+
+      // Peak hold
+      const now = performance.now();
+      if (peakDb >= peakHoldRef.current) {
+        peakHoldRef.current = peakDb;
+        peakHoldTimerRef.current = now;
+      } else if (now - peakHoldTimerRef.current > 1200) {
+        peakHoldRef.current = Math.max(-100, peakHoldRef.current - 0.5);
+      }
+
+      const peakPct = isConnected ? dbToPercent(peakDb) : 0;
+      const rmsPct  = isConnected ? dbToPercent(rmsDb)  : 0;
+      const holdPct = isConnected ? dbToPercent(peakHoldRef.current) : 0;
+      const isClipping = peakDb >= -0.1;
+
+      if (peakBarRef.current)   peakBarRef.current.style.width   = `${peakPct}%`;
+      if (rmsBarRef.current)    rmsBarRef.current.style.width    = `${rmsPct}%`;
+      if (holdMarkerRef.current) {
+        holdMarkerRef.current.style.display = holdPct > 0 ? "block" : "none";
+        holdMarkerRef.current.style.left    = `${Math.min(holdPct, 99.5)}%`;
+      }
+      if (peakLabelRef.current)
+        peakLabelRef.current.textContent = isConnected ? `${peakDb.toFixed(1)} dB` : "-∞ dB";
+      if (rmsLabelRef.current)
+        rmsLabelRef.current.textContent  = isConnected ? `${rmsDb.toFixed(1)} dB`  : "-∞ dB";
+      if (peakLabelRef.current)
+        peakLabelRef.current.className = isClipping ? "text-red-400" : "text-neutral-200";
+      if (clipBadgeRef.current)
+        clipBadgeRef.current.style.display = isClipping ? "inline-flex" : "none";
+    }
+
+    rafRef.current = requestAnimationFrame(loop);
+    return () => { if (rafRef.current !== null) cancelAnimationFrame(rafRef.current); };
+  }, []);
 
   return (
     <div className="flex flex-col gap-4 rounded-xl border border-neutral-800 bg-neutral-900/70 p-5 backdrop-blur shadow-lg">
@@ -39,67 +69,55 @@ export function VolumeMeter() {
           <span className="text-sm font-semibold tracking-wider uppercase text-neutral-300">
             Master Audio Meter
           </span>
-          {isClipping && (
-            <span className="animate-pulse rounded bg-red-600/30 px-1.5 py-0.5 text-[10px] font-bold text-red-400 border border-red-500/40">
-              CLIP
-            </span>
-          )}
+          <span
+            ref={clipBadgeRef}
+            style={{ display: "none" }}
+            className="animate-pulse rounded bg-red-600/30 px-1.5 py-0.5 text-[10px] font-bold text-red-400 border border-red-500/40"
+          >
+            CLIP
+          </span>
         </div>
         <div className="flex items-center gap-3 font-mono text-xs text-neutral-400">
           <span>
-            PEAK: <strong className={isClipping ? "text-red-400" : "text-neutral-200"}>
-              {isConnected ? `${peakDb.toFixed(1)} dB` : "-∞ dB"}
-            </strong>
+            PEAK: <strong ref={peakLabelRef} className="text-neutral-200">-∞ dB</strong>
           </span>
           <span>
-            RMS: <strong className="text-neutral-200">
-              {isConnected ? `${rmsDb.toFixed(1)} dB` : "-∞ dB"}
-            </strong>
+            RMS: <strong ref={rmsLabelRef} className="text-neutral-200">-∞ dB</strong>
           </span>
         </div>
       </div>
 
-      {/* Main Meter Track */}
       <div className="relative flex flex-col gap-2">
-        {/* dB Scale Legend */}
+        {/* Scale */}
         <div className="flex justify-between px-1 text-[10px] font-mono text-neutral-500 select-none">
-          <span>-60</span>
-          <span>-48</span>
-          <span>-36</span>
-          <span>-24</span>
-          <span>-18</span>
-          <span>-12</span>
-          <span>-6</span>
-          <span>-3</span>
+          <span>-60</span><span>-48</span><span>-36</span><span>-24</span>
+          <span>-18</span><span>-12</span><span>-6</span><span>-3</span>
           <span className="text-red-400 font-semibold">0</span>
         </div>
 
-        {/* Peak Bar */}
+        {/* Peak bar */}
         <div className="relative h-6 w-full overflow-hidden rounded bg-neutral-950 border border-neutral-800 p-0.5">
-          {/* Background gradient zones */}
           <div
-            className="h-full rounded-sm transition-all duration-75 ease-out"
+            ref={peakBarRef}
+            className="h-full rounded-sm"
             style={{
-              width: `${peakPct}%`,
-              background:
-                "linear-gradient(90deg, #10b981 0%, #10b981 70%, #f59e0b 85%, #ef4444 100%)",
+              width: "0%",
+              background: "linear-gradient(90deg, #10b981 0%, #10b981 70%, #f59e0b 85%, #ef4444 100%)",
             }}
           />
-
-          {/* Peak Hold Marker */}
-          {peakHoldPct > 0 && (
-            <div
-              className="absolute top-0 bottom-0 w-0.5 bg-white shadow-sm transition-all duration-100 pointer-events-none"
-              style={{ left: `${Math.min(peakHoldPct, 99.5)}%` }}
-            />
-          )}
+          <div
+            ref={holdMarkerRef}
+            className="absolute top-0 bottom-0 w-0.5 bg-white shadow-sm pointer-events-none"
+            style={{ display: "none", left: "0%" }}
+          />
         </div>
 
-        {/* RMS Bar (Subtle) */}
+        {/* RMS bar */}
         <div className="relative h-2 w-full overflow-hidden rounded bg-neutral-950 border border-neutral-800/80 p-[1px]">
           <div
-            className="h-full rounded-sm bg-cyan-400/80 transition-all duration-100 ease-out"
-            style={{ width: `${rmsPct}%` }}
+            ref={rmsBarRef}
+            className="h-full rounded-sm bg-cyan-400/80"
+            style={{ width: "0%" }}
           />
         </div>
       </div>
