@@ -4,6 +4,12 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$SCRIPT_DIR"
 
+RAW_VERSION="${1:-${VERSION:-${GITHUB_REF_NAME:-0.0.0-dev}}}"
+VERSION="${RAW_VERSION#v}"
+ARCH="${ARCH:-$(uname -m)}"
+
+echo "=== Packaging Routune v${VERSION} (linux-${ARCH}) ==="
+
 echo "=== Building Routune Release Artifacts ==="
 cargo build --release -p routune-daemon
 
@@ -15,7 +21,7 @@ echo "=== Building GUI Binary ==="
 cargo build --release -p routune-gui
 
 DIST_DIR="$SCRIPT_DIR/dist"
-STAGE_DIR="$DIST_DIR/routune-linux-x86_64"
+STAGE_DIR="$DIST_DIR/routune-${VERSION}-linux-${ARCH}"
 
 rm -rf "$STAGE_DIR"
 mkdir -p "$STAGE_DIR"
@@ -23,6 +29,7 @@ mkdir -p "$STAGE_DIR"
 echo "=== Staging Release Files ==="
 cp "target/release/routune-daemon" "$STAGE_DIR/"
 cp "target/release/routune-gui" "$STAGE_DIR/"
+ln -sf "routune-gui" "$STAGE_DIR/routune"
 cp "install.sh" "$STAGE_DIR/"
 cp "packaging/routune.service" "$STAGE_DIR/"
 cp "packaging/routune.desktop" "$STAGE_DIR/"
@@ -34,9 +41,14 @@ chmod +x "$STAGE_DIR/routune-daemon" "$STAGE_DIR/routune-gui" "$STAGE_DIR/instal
 
 echo "=== Generating Tarball ==="
 cd "$DIST_DIR"
-tar -czf "routune-linux-x86_64.tar.gz" -C "$DIST_DIR" "routune-linux-x86_64"
-sha256sum "routune-linux-x86_64.tar.gz" > "routune-linux-x86_64.tar.gz.sha256"
+TARBALL_NAME="routune-${VERSION}-linux-${ARCH}.tar.gz"
+tar -czf "$TARBALL_NAME" -C "$DIST_DIR" "routune-${VERSION}-linux-${ARCH}"
+sha256sum "$TARBALL_NAME" > "${TARBALL_NAME}.sha256"
+
+# Create generic fallback copy
+cp "$TARBALL_NAME" "routune-linux-${ARCH}.tar.gz"
+cp "${TARBALL_NAME}.sha256" "routune-linux-${ARCH}.tar.gz.sha256"
 
 echo "=== Packaging Complete ==="
-ls -lh "$DIST_DIR/routune-linux-x86_64.tar.gz"
-cat "$DIST_DIR/routune-linux-x86_64.tar.gz.sha256"
+ls -lh "$DIST_DIR/$TARBALL_NAME"
+cat "$DIST_DIR/${TARBALL_NAME}.sha256"

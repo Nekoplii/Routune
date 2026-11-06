@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
-REPO="mafly/routune"
+REPO="Nekoplii/Routune"
 COLOR_RESET="\033[0m"
 COLOR_GREEN="\033[1;32m"
 COLOR_CYAN="\033[1;36m"
@@ -89,7 +89,7 @@ do_uninstall() {
         systemctl --user disable routune.service 2>/dev/null || true
     fi
 
-    $SUDO rm -f "${BIN_DIR}/routune-daemon" "${BIN_DIR}/routune-gui"
+    $SUDO rm -f "${BIN_DIR}/routune-daemon" "${BIN_DIR}/routune-gui" "${BIN_DIR}/routune"
     $SUDO rm -f "${SERVICE_DIR}/routune.service"
     $SUDO rm -f "${APP_DIR}/routune.desktop"
     $SUDO rm -f "${ICON_DIR}/routune.png"
@@ -154,19 +154,47 @@ if [ "$LOCAL_SOURCE" = false ]; then
     log_info "Fetching latest release archive from https://github.com/${REPO}..."
     TEMP_DIR="$(mktemp -d /tmp/routune-install-XXXXXX)"
 
-    TARBALL_URL="https://github.com/${REPO}/releases/latest/download/routune-linux-x86_64.tar.gz"
-    if ! curl -fsSL "$TARBALL_URL" -o "${TEMP_DIR}/routune.tar.gz"; then
-        log_error "Failed to download release archive from $TARBALL_URL."
+    # Resolve latest release tag from GitHub redirect without hitting API rate limits
+    LATEST_TAG=$(curl -sSI "https://github.com/${REPO}/releases/latest" 2>/dev/null | grep -i "^location:" | sed -E 's/.*tag\/(.*)/\1/' | tr -d '\r\n')
+    VERSION="${LATEST_TAG#v}"
+
+    DOWNLOADED=false
+    if [ -n "$VERSION" ]; then
+        TARBALL_URL="https://github.com/${REPO}/releases/download/${LATEST_TAG}/routune-${VERSION}-linux-${ARCH}.tar.gz"
+        log_info "Attempting download: $TARBALL_URL"
+        if curl -fsSL "$TARBALL_URL" -o "${TEMP_DIR}/routune.tar.gz" 2>/dev/null; then
+            DOWNLOADED=true
+        fi
+    fi
+
+    if [ "$DOWNLOADED" = false ]; then
+        FALLBACK_URL="https://github.com/${REPO}/releases/latest/download/routune-linux-${ARCH}.tar.gz"
+        log_info "Attempting fallback download: $FALLBACK_URL"
+        if curl -fsSL "$FALLBACK_URL" -o "${TEMP_DIR}/routune.tar.gz" 2>/dev/null; then
+            DOWNLOADED=true
+        fi
+    fi
+
+    if [ "$DOWNLOADED" = false ]; then
+        log_error "Failed to download release archive from https://github.com/${REPO}/releases."
         log_error "Ensure a published release exists on https://github.com/${REPO}/releases."
         exit 1
     fi
 
     tar -xzf "${TEMP_DIR}/routune.tar.gz" -C "$TEMP_DIR"
-    SRC_DAEMON="${TEMP_DIR}/routune-daemon"
-    SRC_GUI="${TEMP_DIR}/routune-gui"
-    SRC_SERVICE="${TEMP_DIR}/routune.service"
-    SRC_DESKTOP="${TEMP_DIR}/routune.desktop"
-    SRC_ICON="${TEMP_DIR}/routune.png"
+
+    EXTRACTED_DIR=$(find "$TEMP_DIR" -maxdepth 1 -type d -name "routune*" | head -n 1)
+    if [ -n "$EXTRACTED_DIR" ] && [ -f "${EXTRACTED_DIR}/routune-daemon" ]; then
+        SRC_DIR="$EXTRACTED_DIR"
+    else
+        SRC_DIR="$TEMP_DIR"
+    fi
+
+    SRC_DAEMON="${SRC_DIR}/routune-daemon"
+    SRC_GUI="${SRC_DIR}/routune-gui"
+    SRC_SERVICE="${SRC_DIR}/routune.service"
+    SRC_DESKTOP="${SRC_DIR}/routune.desktop"
+    SRC_ICON="${SRC_DIR}/routune.png"
 fi
 
 # Ensure target directories exist
@@ -175,6 +203,7 @@ $SUDO mkdir -p "$BIN_DIR" "$SERVICE_DIR" "$APP_DIR" "$ICON_DIR"
 log_info "Installing binaries into ${BIN_DIR}..."
 $SUDO install -m 755 "$SRC_DAEMON" "${BIN_DIR}/routune-daemon"
 $SUDO install -m 755 "$SRC_GUI" "${BIN_DIR}/routune-gui"
+$SUDO ln -sf "${BIN_DIR}/routune-gui" "${BIN_DIR}/routune"
 
 # Install Desktop Entry and Icon
 log_info "Installing desktop integration and icons..."
@@ -193,7 +222,7 @@ fi
 log_info "Configuring systemd user service..."
 if [ -f "$SRC_SERVICE" ]; then
     TMP_SVC="$(mktemp /tmp/routune.service.XXXXXX)"
-    sed "s|%h/.local/bin/routune-daemon|${BIN_DIR}/routune-daemon|g" "$SRC_SERVICE" > "$TMP_SVC"
+    sed -E "s|ExecStart=.*|ExecStart=${BIN_DIR}/routune-daemon|g" "$SRC_SERVICE" > "$TMP_SVC"
     $SUDO install -m 644 "$TMP_SVC" "${SERVICE_DIR}/routune.service"
     rm -f "$TMP_SVC"
 
@@ -214,4 +243,4 @@ case ":$PATH:" in
 esac
 
 log_success "Routune installed and started successfully!"
-log_info "Run 'routune-gui' from terminal or launch 'Routune' from application menu."
+log_info "Run 'routune' or 'routune-gui' from terminal or launch 'Routune' from application menu."

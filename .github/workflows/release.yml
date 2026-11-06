@@ -39,29 +39,70 @@ jobs:
             libwebkit2gtk-4.1-dev \
             libgtk-3-dev \
             libayatana-appindicator3-dev \
-            protobuf-compiler
+            protobuf-compiler \
+            rpm \
+            libfuse2t64 \
+            file
 
       - name: Run workspace unit tests
         run: cargo test --workspace
 
+      - name: Set release version
+        run: |
+          RAW_REF="${GITHUB_REF_NAME:-0.0.0-dev}"
+          VERSION="${RAW_REF#v}"
+          echo "RELEASE_VERSION=${VERSION}" >> $GITHUB_ENV
+          if [ -n "$VERSION" ] && [ "$VERSION" != "0.0.0-dev" ]; then
+            sed -i "s/\"version\": \".*\"/\"version\": \"${VERSION}\"/" routune-gui/src-tauri/tauri.conf.json
+          fi
+
       - name: Build and package release archive
-        run: ./scripts/package.sh
+        run: ./scripts/package.sh "${RELEASE_VERSION}"
 
       - name: Build Tauri native bundles (.deb, .rpm, .AppImage)
         run: |
+          cargo build --release -p routune-daemon
           cd routune-gui
-          npx tauri build || true
+          npm ci || npm install
+          npx tauri build
 
       - name: Collect release artifacts
         run: |
-          mkdir -p release-artifacts
-          cp dist/routune-linux-x86_64.tar.gz release-artifacts/
-          cp dist/routune-linux-x86_64.tar.gz.sha256 release-artifacts/
-          cp install.sh release-artifacts/
-          
-          # Collect Tauri native bundles if generated
-          find target/release/bundle -type f \( -name "*.deb" -o -name "*.rpm" -o -name "*.AppImage" \) -exec cp {} release-artifacts/ \; 2>/dev/null || true
+          VERSION="${RELEASE_VERSION}"
+          ARCH="x86_64"
+          PLATFORM="linux"
 
+          mkdir -p release-artifacts
+
+          # 1. Tarballs
+          if [ -f "dist/routune-${VERSION}-${PLATFORM}-${ARCH}.tar.gz" ]; then
+            cp "dist/routune-${VERSION}-${PLATFORM}-${ARCH}.tar.gz" "release-artifacts/routune-${VERSION}-${PLATFORM}-${ARCH}.tar.gz"
+            cp "dist/routune-${VERSION}-${PLATFORM}-${ARCH}.tar.gz.sha256" "release-artifacts/routune-${VERSION}-${PLATFORM}-${ARCH}.tar.gz.sha256" 2>/dev/null || true
+          fi
+          if [ -f "dist/routune-linux-${ARCH}.tar.gz" ]; then
+            cp "dist/routune-linux-${ARCH}.tar.gz" "release-artifacts/routune-linux-${ARCH}.tar.gz"
+          fi
+
+          # 2. Tauri native bundles (.AppImage, .deb, .rpm)
+          APPIMAGE_SRC=$(find target/release/bundle -type f -name "*.AppImage" 2>/dev/null | head -n 1)
+          if [ -n "$APPIMAGE_SRC" ]; then
+            cp "$APPIMAGE_SRC" "release-artifacts/routune-${VERSION}-${PLATFORM}-${ARCH}.AppImage"
+          fi
+
+          DEB_SRC=$(find target/release/bundle -type f -name "*.deb" 2>/dev/null | head -n 1)
+          if [ -n "$DEB_SRC" ]; then
+            cp "$DEB_SRC" "release-artifacts/routune-${VERSION}-${PLATFORM}-${ARCH}.deb"
+          fi
+
+          RPM_SRC=$(find target/release/bundle -type f -name "*.rpm" 2>/dev/null | head -n 1)
+          if [ -n "$RPM_SRC" ]; then
+            cp "$RPM_SRC" "release-artifacts/routune-${VERSION}-${PLATFORM}-${ARCH}.rpm"
+          fi
+
+          # 3. Direct script installer
+          cp install.sh release-artifacts/install.sh
+
+          # 4. Generate SHA256SUMS
           cd release-artifacts
           sha256sum * > SHA256SUMS
           ls -lh
