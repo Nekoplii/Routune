@@ -1540,6 +1540,7 @@ pub fn create_graph_pair(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::AtomicBool;
 
     #[test]
     fn test_virtual_input_node_process_and_telemetry() {
@@ -1650,17 +1651,20 @@ mod tests {
     #[test]
     fn test_cpal_audio_thread_ownership_model() {
         let (cmd_tx, cmd_rx) = crossbeam_channel::bounded::<GraphCommand>(64);
-        let (output_tx, output_rx) = crossbeam_channel::bounded::<Vec<f32>>(8);
+        let (output_tx, output_rx) = crossbeam_channel::bounded::<Vec<f32>>(64);
+        let running = Arc::new(AtomicBool::new(true));
+        let running_clone = running.clone();
 
         // Graph moved exclusively into dedicated audio thread (simulating CPAL audio callback)
         let audio_thread = std::thread::spawn(move || {
             let mut graph = Graph::new(cmd_rx, 256);
             let mut out = vec![0.0f32; 16];
 
-            for _ in 0..5 {
+            while running_clone.load(Ordering::Relaxed) {
                 let input = [1.0f32; 16];
                 graph.process(&input, &mut out);
                 let _ = output_tx.send(out.clone());
+                std::thread::sleep(std::time::Duration::from_millis(1));
             }
         });
 
@@ -1691,16 +1695,25 @@ mod tests {
             })
             .unwrap();
 
+        // Wait for audio thread to process the graph and output updated frames
+        let mut gain_seen = false;
+        for _ in 0..100 {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+            while let Ok(frame) = output_rx.try_recv() {
+                if (frame[0] - 0.75).abs() < 1e-4 {
+                    gain_seen = true;
+                    break;
+                }
+            }
+            if gain_seen {
+                break;
+            }
+        }
+
+        running.store(false, Ordering::Relaxed);
         audio_thread.join().unwrap();
 
-        let mut received = Vec::new();
-        while let Ok(frame) = output_rx.try_recv() {
-            received.push(frame);
-        }
-        assert!(!received.is_empty());
-        // Last frames should reflect processed output
-        let last_frame = received.last().unwrap();
-        assert!((last_frame[0] - 0.75).abs() < 1e-4);
+        assert!(gain_seen, "Audio thread should process graph and apply gain update");
     }
 
     #[test]

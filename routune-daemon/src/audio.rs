@@ -400,10 +400,23 @@ impl NativeVirtualMic {
     pub fn spawn() -> Result<Self> {
         Self::cleanup_dangling();
 
-        let mut child = std::process::Command::new("pw-cli")
-            .stdin(std::process::Stdio::piped())
+        #[cfg(target_os = "linux")]
+        use std::os::unix::process::CommandExt;
+
+        let mut cmd = std::process::Command::new("pw-cli");
+        cmd.stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null());
+
+        #[cfg(target_os = "linux")]
+        unsafe {
+            cmd.pre_exec(|| {
+                libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM);
+                Ok(())
+            });
+        }
+
+        let mut child = cmd
             .spawn()
             .context("Failed to spawn pw-cli for native virtual mic")?;
 
