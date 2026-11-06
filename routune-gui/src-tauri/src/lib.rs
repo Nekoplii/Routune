@@ -325,8 +325,16 @@ mod tests {
 
     #[test]
     fn test_resolve_icon_path() {
-        // Papirus or pixmaps or hicolor should resolve spotify / discord / steam
-        let res = resolve_icon_path("spotify").or_else(|| resolve_icon_path("steam"));
-        assert!(res.is_some());
+        // Direct file resolution test
+        let temp_dir = std::env::temp_dir();
+        let dummy_icon = temp_dir.join("routune_test_dummy_icon.png");
+        let _ = std::fs::write(&dummy_icon, b"fake_icon_data");
+        let res = resolve_icon_path(dummy_icon.to_str().unwrap());
+        assert_eq!(res, Some(dummy_icon.clone()));
+        let _ = std::fs::remove_file(&dummy_icon);
+
+        // Empty string and nonexistent app handling
+        assert!(resolve_icon_path("").is_none());
+        assert!(resolve_icon_path("nonexistent-app-xyz-987654321").is_none());
     }
 }
