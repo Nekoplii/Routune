@@ -1,13 +1,13 @@
 [Unit]
 Description=Routune Audio Routing Daemon
-Documentation=https://github.com/mafly/routune
+Documentation=https://github.com/Nekoplii/Routune
 After=pipewire.service pipewire-pulse.service
 Wants=pipewire.service
 PartOf=graphical-session.target
 
 [Service]
 Type=simple
-ExecStart=%h/.local/bin/routune-daemon
+ExecStart=/usr/bin/routune-daemon
 Restart=on-failure
 RestartSec=2
 LimitRTPRIO=95
