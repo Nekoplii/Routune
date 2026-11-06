@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)]
+
 mod audio;
 mod config;
 #[cfg(target_os = "linux")]
@@ -6,7 +8,7 @@ mod server;
 
 use anyhow::Result;
 use std::net::SocketAddr;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use tonic::transport::Server;
@@ -41,6 +43,12 @@ async fn main() -> Result<()> {
     // 2. Initialize Sonar per-channel router and pushers
     let (mut channel_router, pusher) = audio::ChannelRouter::new();
     let is_active = Arc::new(AtomicBool::new(false));
+
+    // Preload mic noise cancellation state from persisted config before mic capture stream builds
+    pusher.mic_noise_enabled.store(
+        initial_config.get_noise_cancellation(VirtualChannel::Mic),
+        Ordering::Relaxed,
+    );
 
     // 2b. Initialize native virtual mic pipeline (native PipeWire source, CPAL DSP output stream, auto-link)
     #[cfg(target_os = "linux")]
@@ -104,6 +112,12 @@ async fn main() -> Result<()> {
         Ok(service) => {
             info!("PipeWire virtual audio bridge running with 4 virtual sinks ('routune-game', 'routune-chat', 'routune-media', 'routune-aux')");
             let arc_service = Arc::new(service);
+
+            // Restore Mic AI noise cancellation and level
+            let mic_noise = initial_config.get_noise_cancellation(VirtualChannel::Mic);
+            let _ = arc_service.toggle_ai_noise(VirtualChannel::Mic, mic_noise);
+            let _ = arc_service.set_ai_noise_level(VirtualChannel::Mic, initial_config.get_noise_level());
+
             let g = initial_config.get_noise_gate();
             let _ = arc_service.set_noise_gate(
                 VirtualChannel::Mic,
@@ -122,6 +136,11 @@ async fn main() -> Result<()> {
                 c.release_ms,
                 c.makeup_gain_db,
             );
+
+            // Restore initial EQ for Mic
+            for (band, gain) in initial_config.get_eq(VirtualChannel::Mic).iter().enumerate() {
+                let _ = arc_service.update_eq(VirtualChannel::Mic, band, *gain);
+            }
             (Some(arc_service.clone()), Some(arc_service as Arc<dyn TelemetryMetricsProvider>))
         }
         Err(err) => {
@@ -168,17 +187,23 @@ async fn main() -> Result<()> {
     let supervisor_handle = tokio::spawn(async move {
         let mut interval = tokio::time::interval(std::time::Duration::from_millis(500));
         let mut loop_count = 0u32;
+        let mut channel_failures: std::collections::HashMap<i32, (u32, std::time::Instant)> = std::collections::HashMap::new();
+
         loop {
             interval.tick().await;
             loop_count = loop_count.wrapping_add(1);
 
             let death_signal = {
-                let router = recovery_router.lock().await;
-                router.try_recv_death_signal()
+                let mut router = recovery_router.lock().await;
+                let sig = router.try_recv_death_signal();
+                if sig.is_some() {
+                    router.cleanup_inactive_streams();
+                }
+                sig
             };
 
             if let Some(ref signal) = death_signal {
-                warn!("Channel stream death signal received: {:?}. Audio routing handle released.", signal);
+                warn!("Channel stream death signal received: {:?}. Inactive streams pruned.", signal);
             }
 
             // Periodic auto-recovery check (on death signal or every 3 seconds)
@@ -197,18 +222,53 @@ async fn main() -> Result<()> {
                     (server::proto::AudioChannel::Mic as i32, cfg.get_route(VirtualChannel::Mic)),
                 ];
 
+                let now = std::time::Instant::now();
                 let mut router = recovery_router.lock().await;
                 for (ch_id, target) in ch_targets {
                     if !target.is_empty() && !target.eq_ignore_ascii_case("none") && !target.eq_ignore_ascii_case("unassigned") {
                         if !router.is_channel_stream_active(ch_id) {
-                            match router.set_channel_routing(ch_id, target) {
-                                Ok(act) => {
-                                    info!("Supervisor recovered/restored channel {ch_id} route -> {act}");
-                                }
-                                Err(e) => {
-                                    tracing::debug!("Supervisor recovery attempt for channel {ch_id} to {target}: {e}");
+                            if let Some((fails, last_try)) = channel_failures.get(&ch_id) {
+                                let cooldown = match *fails {
+                                    0 => std::time::Duration::from_millis(500),
+                                    1 => std::time::Duration::from_secs(1),
+                                    2 => std::time::Duration::from_secs(3),
+                                    _ => std::time::Duration::from_secs(6),
+                                };
+                                if now.duration_since(*last_try) < cooldown {
+                                    continue;
                                 }
                             }
+
+                            // If Mic channel repeatedly fails with hardware target, fallback to sound server bridge
+                            let target_to_try = if ch_id == server::proto::AudioChannel::Mic as i32
+                                && channel_failures.get(&ch_id).is_some_and(|(f, _)| *f >= 2)
+                                && target != "pulse"
+                                && target != "pipewire"
+                                && target != "default"
+                            {
+                                warn!("Mic target '{target}' failed repeatedly. Falling back to sound server bridge 'pulse'...");
+                                "pulse"
+                            } else {
+                                target
+                            };
+
+                            match router.set_channel_routing(ch_id, target_to_try) {
+                                Ok(act) => {
+                                    info!("Supervisor recovered/restored channel {ch_id} route -> {act}");
+                                    channel_failures.remove(&ch_id);
+                                    if target_to_try != target {
+                                        recovery_config.set_route(VirtualChannel::Mic, target_to_try).await;
+                                    }
+                                }
+                                Err(e) => {
+                                    tracing::debug!("Supervisor recovery attempt for channel {ch_id} to {target_to_try}: {e}");
+                                    let entry = channel_failures.entry(ch_id).or_insert((0, now));
+                                    entry.0 = entry.0.saturating_add(1);
+                                    entry.1 = now;
+                                }
+                            }
+                        } else {
+                            channel_failures.remove(&ch_id);
                         }
                     }
                 }
@@ -232,11 +292,10 @@ async fn main() -> Result<()> {
     dispatcher_handle.abort();
 
     #[cfg(target_os = "linux")]
-    if let Some(service) = pipewire_service {
-        if let Ok(service) = Arc::try_unwrap(service) {
+    if let Some(service) = pipewire_service
+        && let Ok(service) = Arc::try_unwrap(service) {
             service.shutdown();
         }
-    }
 
     info!("Routune daemon shutdown complete.");
 

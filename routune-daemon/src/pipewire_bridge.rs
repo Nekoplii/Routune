@@ -183,6 +183,7 @@ impl PipeWireBridgeService {
         let (aux_eq_tx, aux_eq_rx) = crossbeam_channel::bounded(64);
 
         // Setup default graph: independent channel chains -> channel-specific PhysicalOutputNode
+        #[allow(clippy::type_complexity)]
         let channels: [(&str, &str, Option<(&str, &str)>, &str, &str, &str, &str, &str, &str, &str, &str, VirtualChannel); 5] = [
             ("routune-game", "Routune Game", None, "game-eq", "Game Equalizer", "game-resampler", "Game Resampler", "game-bypass", "Game DSP Bypass", "game-output", "Game Output", VirtualChannel::Game),
             ("routune-chat", "Routune Chat", Some(("chat-noise", "Chat AI Noise")), "chat-eq", "Chat Equalizer", "chat-resampler", "Chat Resampler", "chat-bypass", "Chat DSP Bypass", "chat-output", "Chat Output", VirtualChannel::Chat),
@@ -379,7 +380,7 @@ impl PipeWireBridgeService {
                     .global(move |global| {
                         if global.type_ == pw::types::ObjectType::Metadata {
                             if let Some(props) = &global.props {
-                                let dict = props.as_ref();
+                                let dict = props;
                                 if dict.get("metadata.name") == Some("default") {
                                     match t_registry.bind::<pw::metadata::Metadata, _>(global) {
                                         Ok(meta) => {
@@ -388,19 +389,17 @@ impl PipeWireBridgeService {
                                             let listener = meta
                                                 .add_listener_local()
                                                 .property(move |subject, key, _type, value| {
-                                                    if let Some(key) = key {
-                                                        if key == "target.node" || key == "target.object" {
-                                                            if let Ok(mut apps) = prop_apps.lock() {
-                                                                for app in apps.values_mut() {
-                                                                    if app.id == subject || app.node_ids.contains(&subject) {
-                                                                        if key == "target.node" {
-                                                                            app.target_node = value.and_then(|v| v.parse::<u32>().ok());
-                                                                        } else if key == "target.object" {
-                                                                            app.target_object = value.map(|v| v.to_string());
-                                                                        }
-                                                                        break;
-                                                                    }
+                                                    if let Some(key) = key
+                                                        && (key == "target.node" || key == "target.object")
+                                                        && let Ok(mut apps) = prop_apps.lock() {
+                                                        for app in apps.values_mut() {
+                                                            if app.id == subject || app.node_ids.contains(&subject) {
+                                                                if key == "target.node" {
+                                                                    app.target_node = value.and_then(|v| v.parse::<u32>().ok());
+                                                                } else if key == "target.object" {
+                                                                    app.target_object = value.map(|v| v.to_string());
                                                                 }
+                                                                break;
                                                             }
                                                         }
                                                     }
@@ -418,7 +417,7 @@ impl PipeWireBridgeService {
                             }
                         } else if global.type_ == pw::types::ObjectType::Device {
                             if let Some(props) = &global.props {
-                                let dict = props.as_ref();
+                                let dict = props;
                                 let desc = dict.get("device.description")
                                     .or_else(|| dict.get("device.nick"))
                                     .unwrap_or("");
@@ -432,15 +431,14 @@ impl PipeWireBridgeService {
                                     }
                                 }
                             }
-                        } else if global.type_ == pw::types::ObjectType::Node {
-                            if let Some(props) = &global.props {
-                                let dict = props.as_ref();
+                        } else if global.type_ == pw::types::ObjectType::Node
+                            && let Some(props) = &global.props {
+                                let dict = props;
                                 let node_name = dict.get("node.name").unwrap_or("");
-                                if node_name == "routune-game" || node_name == "routune-chat" || node_name == "routune-media" || node_name == "routune-aux" || node_name == "routune-mic" || node_name == "routune-mic-source" || node_name == "routune-virtual-mic" {
-                                    if let Ok(mut sinks) = t_sinks_reg.lock() {
+                                if (node_name == "routune-game" || node_name == "routune-chat" || node_name == "routune-media" || node_name == "routune-aux" || node_name == "routune-mic" || node_name == "routune-mic-source" || node_name == "routune-virtual-mic")
+                                    && let Ok(mut sinks) = t_sinks_reg.lock() {
                                         sinks.insert(node_name.to_string(), global.id);
                                     }
-                                }
 
                                 let media_class = dict.get("media.class").unwrap_or("");
                                 if media_class == "Stream/Output/Audio" {
@@ -464,7 +462,7 @@ impl PipeWireBridgeService {
 
                                     if !node_name.starts_with("routune-") && !app_name.starts_with("routune-") {
                                         let icon_name = dict.get("application.icon-name")
-                                            .or_else(|| binary)
+                                            .or(binary)
                                             .unwrap_or("")
                                             .to_string();
 
@@ -561,7 +559,6 @@ impl PipeWireBridgeService {
                                     }
                                 }
                             }
-                        }
                     })
                     .global_remove({
                         let t_apps_rem = t_discovered_apps.clone();
@@ -570,11 +567,10 @@ impl PipeWireBridgeService {
                             if let Ok(mut apps) = t_apps_rem.lock() {
                                 apps.retain(|_, app| {
                                     app.node_ids.retain(|&nid| nid != id);
-                                    if app.id == id {
-                                        if let Some(&first) = app.node_ids.first() {
+                                    if app.id == id
+                                        && let Some(&first) = app.node_ids.first() {
                                             app.id = first;
                                         }
-                                    }
                                     !app.node_ids.is_empty()
                                 });
                             }
@@ -1006,8 +1002,8 @@ impl PipeWireBridgeService {
                                 let chunk = datas[0].chunk();
                                 let offset = chunk.offset() as usize;
                                 let size = chunk.size() as usize;
-                                if let Some(slice) = datas[0].data() {
-                                    if offset + size <= slice.len() && size >= 4 {
+                                if let Some(slice) = datas[0].data()
+                                    && offset + size <= slice.len() && size >= 4 {
                                         let raw_bytes = &slice[offset..offset + size];
                                         let (prefix, floats, _) = unsafe { raw_bytes.align_to::<f32>() };
                                         if prefix.is_empty() && !floats.is_empty() {
@@ -1019,7 +1015,6 @@ impl PipeWireBridgeService {
                                             }
                                         }
                                     }
-                                }
                             }
                         }
                     })
@@ -1182,11 +1177,10 @@ impl PipeWireBridgeService {
             target_node_ids.push(app_id);
         }
 
-        if let Some(ref ident) = app_identifier {
-            if let Ok(mut persistent) = self.persistent_app_routes.lock() {
+        if let Some(ref ident) = app_identifier
+            && let Ok(mut persistent) = self.persistent_app_routes.lock() {
                 persistent.insert(ident.to_lowercase(), target_channel);
             }
-        }
 
         // 2. Dispatch to PipeWire loop for each stream node
         for &nid in &target_node_ids {
@@ -1381,6 +1375,7 @@ impl PipeWireBridgeService {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn set_compressor(
         &self,
         channel: VirtualChannel,

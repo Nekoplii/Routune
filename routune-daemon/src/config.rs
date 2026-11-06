@@ -8,11 +8,10 @@ use tokio::sync::{mpsc, Mutex};
 use tracing::{debug, error, info};
 
 pub fn resolve_config_path() -> PathBuf {
-    if let Ok(custom) = std::env::var("ROUTUNE_CONFIG_PATH") {
-        if !custom.trim().is_empty() {
+    if let Ok(custom) = std::env::var("ROUTUNE_CONFIG_PATH")
+        && !custom.trim().is_empty() {
             return PathBuf::from(custom);
         }
-    }
     if let Some(proj_dirs) = directories::ProjectDirs::from("com", "routune", "routune") {
         proj_dirs.config_dir().join("config.json")
     } else if let Some(base_dirs) = directories::BaseDirs::new() {

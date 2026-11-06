@@ -662,10 +662,10 @@ impl AudioNode for EqNode {
     }
 
     fn reset(&mut self) {
-        for i in 0..EQ_BANDS_COUNT {
+        for (i, &freq) in EQ_FREQUENCIES_HZ.iter().enumerate().take(EQ_BANDS_COUNT) {
             let fs = biquad::Hertz::<f32>::from_hz(self.sample_rate as f32)
                 .unwrap_or_else(|_| biquad::Hertz::<f32>::from_hz(48000.0_f32).unwrap());
-            let f0 = biquad::Hertz::<f32>::from_hz(EQ_FREQUENCIES_HZ[i]).unwrap();
+            let f0 = biquad::Hertz::<f32>::from_hz(freq).unwrap();
             if let Ok(coeffs) = biquad::Coefficients::<f32>::from_params(
                 biquad::Type::PeakingEQ(self.gains_db[i]),
                 fs,
@@ -829,11 +829,10 @@ impl Graph {
 
     fn find_slot_by_id(&self, id: &str) -> Option<usize> {
         for (i, slot) in self.slots.iter().enumerate() {
-            if let Some(s) = slot {
-                if s.node.id() == id {
+            if let Some(s) = slot
+                && s.node.id() == id {
                     return Some(i);
                 }
-            }
         }
         None
     }
@@ -918,51 +917,42 @@ impl Graph {
                         for slot in self.slots.iter_mut().flatten() {
                             slot.targets.retain(|&t| t != idx);
                         }
-                        if let Some(removed_slot) = self.slots[idx].take() {
-                            if let Some(producer) = &self.recycle_producer {
+                        if let Some(removed_slot) = self.slots[idx].take()
+                            && let Some(producer) = &self.recycle_producer {
                                 let _ = producer.try_send(removed_slot.node);
                             }
-                        }
                         topology_changed = true;
                     }
                 }
                 GraphCommand::ConnectNode { from, to } => {
                     if let (Some(from_idx), Some(to_idx)) =
                         (self.find_slot_by_id(&from), self.find_slot_by_id(&to))
-                    {
-                        if let Some(slot) = &mut self.slots[from_idx] {
-                            if !slot.targets.contains(&to_idx) {
+                        && let Some(slot) = &mut self.slots[from_idx]
+                            && !slot.targets.contains(&to_idx) {
                                 slot.targets.push(to_idx);
                                 topology_changed = true;
                             }
-                        }
-                    }
                 }
                 GraphCommand::DisconnectNode { from, to } => {
                     if let (Some(from_idx), Some(to_idx)) =
                         (self.find_slot_by_id(&from), self.find_slot_by_id(&to))
-                    {
-                        if let Some(slot) = &mut self.slots[from_idx] {
-                            if let Some(pos) = slot.targets.iter().position(|&t| t == to_idx) {
+                        && let Some(slot) = &mut self.slots[from_idx]
+                            && let Some(pos) = slot.targets.iter().position(|&t| t == to_idx) {
                                 slot.targets.remove(pos);
                                 topology_changed = true;
                             }
-                        }
-                    }
                 }
                 GraphCommand::SetBypass { id, bypassed } => {
-                    if let Some(idx) = self.find_slot_by_id(&id) {
-                        if let Some(slot) = &mut self.slots[idx] {
+                    if let Some(idx) = self.find_slot_by_id(&id)
+                        && let Some(slot) = &mut self.slots[idx] {
                             slot.node.set_bypassed(bypassed);
                         }
-                    }
                 }
                 GraphCommand::SetGain { id, gain } => {
-                    if let Some(idx) = self.find_slot_by_id(&id) {
-                        if let Some(slot) = &mut self.slots[idx] {
+                    if let Some(idx) = self.find_slot_by_id(&id)
+                        && let Some(slot) = &mut self.slots[idx] {
                             slot.node.set_gain(gain);
                         }
-                    }
                 }
                 GraphCommand::UpdateEq(channel, band_index, gain_db) => {
                     let eq_id = match channel {
@@ -973,11 +963,10 @@ impl Graph {
                         VirtualChannel::Aux => "aux-eq",
                         VirtualChannel::Mic => "mic-eq",
                     };
-                    if let Some(idx) = self.find_slot_by_id(eq_id) {
-                        if let Some(slot) = &mut self.slots[idx] {
+                    if let Some(idx) = self.find_slot_by_id(eq_id)
+                        && let Some(slot) = &mut self.slots[idx] {
                             slot.node.set_eq_band(band_index, gain_db);
                         }
-                    }
                 }
                 GraphCommand::ToggleAiNoise(channel, enabled) => {
                     let noise_id = match channel {
@@ -988,11 +977,10 @@ impl Graph {
                         VirtualChannel::Aux => "aux-noise",
                         VirtualChannel::Mic => "mic-noise",
                     };
-                    if let Some(idx) = self.find_slot_by_id(noise_id) {
-                        if let Some(slot) = &mut self.slots[idx] {
+                    if let Some(idx) = self.find_slot_by_id(noise_id)
+                        && let Some(slot) = &mut self.slots[idx] {
                             slot.node.set_ai_noise(enabled);
                         }
-                    }
                 }
                 GraphCommand::SetAiNoiseLevel(channel, level) => {
                     let noise_id = match channel {
@@ -1003,11 +991,10 @@ impl Graph {
                         VirtualChannel::Aux => "aux-noise",
                         VirtualChannel::Mic => "mic-noise",
                     };
-                    if let Some(idx) = self.find_slot_by_id(noise_id) {
-                        if let Some(slot) = &mut self.slots[idx] {
+                    if let Some(idx) = self.find_slot_by_id(noise_id)
+                        && let Some(slot) = &mut self.slots[idx] {
                             slot.node.set_ai_noise_level(level);
                         }
-                    }
                 }
                 GraphCommand::UpdateVolume(channel, volume_db) => {
                     let out_id = match channel {
@@ -1018,8 +1005,8 @@ impl Graph {
                         VirtualChannel::Aux => "aux-output",
                         VirtualChannel::Mic => "mic-output",
                     };
-                    if let Some(idx) = self.find_slot_by_id(out_id) {
-                        if let Some(slot) = &mut self.slots[idx] {
+                    if let Some(idx) = self.find_slot_by_id(out_id)
+                        && let Some(slot) = &mut self.slots[idx] {
                             let linear_gain = if volume_db <= -48.0 {
                                 0.0f32
                             } else {
@@ -1027,7 +1014,6 @@ impl Graph {
                             };
                             slot.node.set_gain(linear_gain);
                         }
-                    }
                 }
                 GraphCommand::UpdateMute(channel, muted) => {
                     let out_id = match channel {
@@ -1038,11 +1024,10 @@ impl Graph {
                         VirtualChannel::Aux => "aux-output",
                         VirtualChannel::Mic => "mic-output",
                     };
-                    if let Some(idx) = self.find_slot_by_id(out_id) {
-                        if let Some(slot) = &mut self.slots[idx] {
+                    if let Some(idx) = self.find_slot_by_id(out_id)
+                        && let Some(slot) = &mut self.slots[idx] {
                             slot.node.set_bypassed(muted);
                         }
-                    }
                 }
                 GraphCommand::UpdateNoiseGate {
                     channel,
@@ -1055,11 +1040,10 @@ impl Graph {
                         VirtualChannel::Mic => "mic-gate",
                         _ => "",
                     };
-                    if let Some(idx) = self.find_slot_by_id(node_id) {
-                        if let Some(slot) = &mut self.slots[idx] {
+                    if let Some(idx) = self.find_slot_by_id(node_id)
+                        && let Some(slot) = &mut self.slots[idx] {
                             slot.node.set_noise_gate(enabled, threshold_db, attack_ms, release_ms);
                         }
-                    }
                 }
                 GraphCommand::UpdateCompressor {
                     channel,
@@ -1074,8 +1058,8 @@ impl Graph {
                         VirtualChannel::Mic => "mic-comp",
                         _ => "",
                     };
-                    if let Some(idx) = self.find_slot_by_id(node_id) {
-                        if let Some(slot) = &mut self.slots[idx] {
+                    if let Some(idx) = self.find_slot_by_id(node_id)
+                        && let Some(slot) = &mut self.slots[idx] {
                             slot.node.set_compressor(
                                 enabled,
                                 threshold_db,
@@ -1085,7 +1069,6 @@ impl Graph {
                                 makeup_gain_db,
                             );
                         }
-                    }
                 }
                 GraphCommand::UpdateSpatialAudio {
                     channel,
@@ -1099,11 +1082,10 @@ impl Graph {
                         VirtualChannel::Aux => "aux-spatial",
                         _ => "",
                     };
-                    if let Some(idx) = self.find_slot_by_id(node_id) {
-                        if let Some(slot) = &mut self.slots[idx] {
+                    if let Some(idx) = self.find_slot_by_id(node_id)
+                        && let Some(slot) = &mut self.slots[idx] {
                             slot.node.set_spatial_audio(enabled, mode, strength);
                         }
-                    }
                 }
                 GraphCommand::UpdateVolumeBoost {
                     channel,
@@ -1116,11 +1098,10 @@ impl Graph {
                         VirtualChannel::Aux => "aux-boost",
                         _ => "",
                     };
-                    if let Some(idx) = self.find_slot_by_id(node_id) {
-                        if let Some(slot) = &mut self.slots[idx] {
+                    if let Some(idx) = self.find_slot_by_id(node_id)
+                        && let Some(slot) = &mut self.slots[idx] {
                             slot.node.set_volume_boost(enabled, boost_db);
                         }
-                    }
                 }
             }
         }
@@ -1138,14 +1119,12 @@ impl Graph {
         let len = output.len().min(self.scratch_mix.len());
         self.scratch_mix[..len].fill(0.0);
 
-        if !input.is_empty() {
-            if let Some(&first_idx) = self.execution_order.first() {
-                if let Some(slot) = &mut self.slots[first_idx] {
+        if !input.is_empty()
+            && let Some(&first_idx) = self.execution_order.first()
+                && let Some(slot) = &mut self.slots[first_idx] {
                     let copy_len = input.len().min(slot.input_buffer.len());
                     slot.input_buffer[..copy_len].copy_from_slice(&input[..copy_len]);
                 }
-            }
-        }
 
         self.execute_routing(len);
         output[..len].copy_from_slice(&self.scratch_mix[..len]);
@@ -1212,14 +1191,13 @@ impl Graph {
 
     /// Feed input directly into a designated node slot (e.g. from virtual sink).
     pub fn feed_node_input(&mut self, node_id: &str, input: &[f32]) {
-        if let Some(idx) = self.find_slot_by_id(node_id) {
-            if let Some(slot) = &mut self.slots[idx] {
+        if let Some(idx) = self.find_slot_by_id(node_id)
+            && let Some(slot) = &mut self.slots[idx] {
                 let len = input.len().min(slot.input_buffer.len());
-                for i in 0..len {
-                    slot.input_buffer[i] += input[i];
+                for (slot_in, &in_sample) in slot.input_buffer.iter_mut().zip(&input[..len]) {
+                    *slot_in += in_sample;
                 }
             }
-        }
     }
 }
 
@@ -1434,14 +1412,14 @@ impl GraphController {
                 release_ms,
             })
             .map_err(|_| "Command queue full")?;
-        if channel == VirtualChannel::Mic {
-            if let Some(info) = self.node_infos.iter_mut().find(|n| n.id == "mic-gate") {
+        if channel == VirtualChannel::Mic
+            && let Some(info) = self.node_infos.iter_mut().find(|n| n.id == "mic-gate") {
                 info.bypassed = !enabled;
             }
-        }
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn set_compressor(
         &mut self,
         channel: VirtualChannel,
@@ -1463,11 +1441,10 @@ impl GraphController {
                 makeup_gain_db,
             })
             .map_err(|_| "Command queue full")?;
-        if channel == VirtualChannel::Mic {
-            if let Some(info) = self.node_infos.iter_mut().find(|n| n.id == "mic-comp") {
+        if channel == VirtualChannel::Mic
+            && let Some(info) = self.node_infos.iter_mut().find(|n| n.id == "mic-comp") {
                 info.bypassed = !enabled;
             }
-        }
         Ok(())
     }
 

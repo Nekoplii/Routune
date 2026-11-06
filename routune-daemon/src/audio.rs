@@ -3,7 +3,7 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{SampleFormat, Stream, StreamConfig};
 use crossbeam_channel::{Receiver, Sender};
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use tracing::{info, warn};
 
@@ -138,10 +138,10 @@ impl AudioRingBuffer {
 
         let to_read = (requested.min(available)) & !1;
 
-        for i in 0..to_read {
+        for (i, out) in output.iter_mut().enumerate().take(to_read) {
             let bits = self.buffer[(r.wrapping_add(i)) & AUDIO_RING_MASK].load(Ordering::Relaxed);
             let s = f32::from_bits(bits);
-            output[i] = if s.is_nan() || s.is_infinite() { 0.0 } else { s };
+            *out = if s.is_nan() || s.is_infinite() { 0.0 } else { s };
         }
 
         // Buffer starvation / underrun protection: pad remainder with 0.0 silence
@@ -442,25 +442,22 @@ impl NativeVirtualMic {
     }
 
     pub fn cleanup_dangling() {
-        if let Ok(output) = std::process::Command::new("pw-dump").arg("Node").output() {
-            if output.status.success() {
-                if let Ok(val) = serde_json::from_slice::<serde_json::Value>(&output.stdout) {
-                    if let Some(nodes) = val.as_array() {
+        if let Ok(output) = std::process::Command::new("pw-dump").arg("Node").output()
+            && output.status.success()
+                && let Ok(val) = serde_json::from_slice::<serde_json::Value>(&output.stdout)
+                    && let Some(nodes) = val.as_array() {
                         for node in nodes {
                             let name = node["info"]["props"]["node.name"].as_str().unwrap_or("");
-                            if name == "routune-virtual-mic" {
-                                if let Some(id) = node["id"].as_u64() {
+                            if name == "routune-virtual-mic"
+                                && let Some(id) = node["id"].as_u64() {
                                     info!("Cleaning up dangling native PipeWire virtual mic node ID {id}");
                                     let _ = std::process::Command::new("pw-cli")
+                                        .stdin(std::process::Stdio::null())
                                         .args(["destroy", &id.to_string()])
                                         .output();
                                 }
-                            }
                         }
                     }
-                }
-            }
-        }
     }
 
     pub fn find_node_id(node_name: &str) -> Option<u32> {
@@ -484,6 +481,7 @@ impl Drop for NativeVirtualMic {
         if let Some(id) = self.node_id.take() {
             info!("Destroying native PipeWire virtual mic node ID {id}");
             let _ = std::process::Command::new("pw-cli")
+                .stdin(std::process::Stdio::null())
                 .args(["destroy", &id.to_string()])
                 .output();
         }
@@ -494,8 +492,104 @@ impl Drop for NativeVirtualMic {
     }
 }
 
+/// Find PipeWire node id by node.name property from a pw-dump items array.
+fn find_node_id_in_dump(items: &[serde_json::Value], node_name: &str) -> Option<u64> {
+    for obj in items {
+        if obj.get("type").and_then(|t| t.as_str()) == Some("PipeWire:Interface:Node")
+            && obj["info"]["props"]["node.name"].as_str() == Some(node_name) {
+                return obj["id"].as_u64();
+            }
+    }
+    None
+}
+
+fn find_all_dsp_out_ids(items: &[serde_json::Value]) -> Vec<u64> {
+    let mut ids = Vec::new();
+    for obj in items {
+        if obj.get("type").and_then(|t| t.as_str()) == Some("PipeWire:Interface:Node") {
+            let props = &obj["info"]["props"];
+            let name = props["node.name"].as_str().unwrap_or("");
+            let app = props["application.name"].as_str().unwrap_or("");
+            let bin = props["application.process.binary"].as_str().unwrap_or("");
+            if (name == "routune-mic-dsp-out"
+                || (bin == "routune-daemon" && app.contains("ALSA plug-in")))
+                && let Some(id) = obj["id"].as_u64() {
+                    ids.push(id);
+                }
+        }
+    }
+    ids
+}
+
+fn find_all_capture_in_ids(items: &[serde_json::Value]) -> Vec<u64> {
+    let mut ids = Vec::new();
+    for obj in items {
+        if obj.get("type").and_then(|t| t.as_str()) == Some("PipeWire:Interface:Node") {
+            let props = &obj["info"]["props"];
+            let bin = props["application.process.binary"].as_str().unwrap_or("");
+            let app = props["application.name"].as_str().unwrap_or("");
+            let media_class = props["media.class"].as_str().unwrap_or("");
+            let media_name = props["media.name"].as_str().unwrap_or("");
+            if (bin == "routune-daemon" || app.contains("routune-daemon"))
+                && (media_class == "Stream/Input/Audio" || media_name.contains("Capture"))
+                && let Some(id) = obj["id"].as_u64() {
+                    ids.push(id);
+                }
+        }
+    }
+    ids
+}
+
+fn find_physical_source_node(items: &[serde_json::Value]) -> Option<u64> {
+    for obj in items {
+        if obj.get("type").and_then(|t| t.as_str()) == Some("PipeWire:Interface:Node") {
+            let props = &obj["info"]["props"];
+            let media_class = props.get("media.class").and_then(|v| v.as_str()).unwrap_or("");
+            let node_name = props.get("node.name").and_then(|v| v.as_str()).unwrap_or("");
+            if media_class == "Audio/Source" && node_name != "routune-virtual-mic" {
+                return obj["id"].as_u64();
+            }
+        }
+    }
+    None
+}
+
+static IS_UNLINKING: AtomicBool = AtomicBool::new(false);
+
 pub fn unlink_unwanted_mic_dsp_links() {
-    let output = match std::process::Command::new("pw-dump").output() {
+    if IS_UNLINKING.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    struct Guard;
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            IS_UNLINKING.store(false, Ordering::SeqCst);
+        }
+    }
+    let _guard = Guard;
+
+    // Fast path: explicitly sever links to routune-game default playback sink
+    let _ = std::process::Command::new("pw-link")
+        .stdin(std::process::Stdio::null())
+        .args(["-d", "routune-mic-dsp-out:output_FL", "routune-game:playback_FL"])
+        .output();
+    let _ = std::process::Command::new("pw-link")
+        .stdin(std::process::Stdio::null())
+        .args(["-d", "routune-mic-dsp-out:output_FR", "routune-game:playback_FR"])
+        .output();
+    let _ = std::process::Command::new("pw-link")
+        .stdin(std::process::Stdio::null())
+        .args(["-d", "ALSA plug-in [routune-daemon]:output_FL", "routune-game:playback_FL"])
+        .output();
+    let _ = std::process::Command::new("pw-link")
+        .stdin(std::process::Stdio::null())
+        .args(["-d", "ALSA plug-in [routune-daemon]:output_FR", "routune-game:playback_FR"])
+        .output();
+
+    let output = match std::process::Command::new("pw-dump")
+        .stdin(std::process::Stdio::null())
+        .output()
+    {
         Ok(o) if o.status.success() => o.stdout,
         _ => return,
     };
@@ -510,23 +604,13 @@ pub fn unlink_unwanted_mic_dsp_links() {
         None => return,
     };
 
-    let mut dsp_out_id = None;
-    let mut virtual_mic_id = None;
-
-    for obj in items {
-        if obj.get("type").and_then(|t| t.as_str()) == Some("PipeWire:Interface:Node") {
-            let name = obj["info"]["props"]["node.name"].as_str().unwrap_or("");
-            if name == "routune-mic-dsp-out" {
-                dsp_out_id = obj["id"].as_u64();
-            } else if name == "routune-virtual-mic" {
-                virtual_mic_id = obj["id"].as_u64();
-            }
-        }
-    }
-
-    let (Some(dsp_out_id), Some(virtual_mic_id)) = (dsp_out_id, virtual_mic_id) else {
-        return;
+    let dsp_ids = find_all_dsp_out_ids(items);
+    let virtual_mic_id = match find_node_id_in_dump(items, "routune-virtual-mic") {
+        Some(id) => id,
+        None => return,
     };
+    let capture_in_ids = find_all_capture_in_ids(items);
+    let phys_source_id = find_physical_source_node(items);
 
     for obj in items {
         if obj.get("type").and_then(|t| t.as_str()) == Some("PipeWire:Interface:Link") {
@@ -534,36 +618,82 @@ pub fn unlink_unwanted_mic_dsp_links() {
             let out_node = info.get("output-node-id").and_then(|v| v.as_u64());
             let in_node = info.get("input-node-id").and_then(|v| v.as_u64());
 
-            if out_node == Some(dsp_out_id) && in_node != Some(virtual_mic_id) {
-                if let Some(link_id) = obj["id"].as_u64() {
-                    info!("Removing unwanted autoconnect link {link_id} from routune-mic-dsp-out (input node {in_node:?})");
-                    let _ = std::process::Command::new("pw-cli")
-                        .args(["destroy", &link_id.to_string()])
+            // 1. Mic DSP output must only route to routune-virtual-mic, unlink anything else
+            if let Some(out_id) = out_node
+                && dsp_ids.contains(&out_id) && in_node != Some(virtual_mic_id)
+                    && let Some(link_id) = obj["id"].as_u64() {
+                        info!("Removing unwanted autoconnect link {link_id} from mic DSP output (input node {in_node:?})");
+                        let _ = std::process::Command::new("pw-link")
+                            .stdin(std::process::Stdio::null())
+                            .args(["-d", &link_id.to_string()])
+                            .output();
+                    }
+
+            // 2. Capture inputs of routune-daemon must NEVER be linked to routune-virtual-mic (feedback loop)
+            if out_node == Some(virtual_mic_id)
+                && let Some(in_id) = in_node
+                    && capture_in_ids.contains(&in_id)
+                        && let Some(link_id) = obj["id"].as_u64() {
+                            info!("Removing invalid feedback link {link_id} from virtual mic to routune capture node {in_id}");
+                            let _ = std::process::Command::new("pw-link")
+                                .stdin(std::process::Stdio::null())
+                                .args(["-d", &link_id.to_string()])
+                                .output();
+                        }
+        }
+    }
+
+    // 3. Ensure routune capture stream is linked to the physical microphone source
+    if let Some(phys_id) = phys_source_id
+        && !capture_in_ids.is_empty() {
+            let mut phys_ports = Vec::new();
+            let mut cap_ports = Vec::new();
+            for obj in items {
+                if obj.get("type").and_then(|t| t.as_str()) == Some("PipeWire:Interface:Port") {
+                    let port_info = &obj["info"];
+                    let dir = port_info.get("direction").and_then(|v| v.as_str()).unwrap_or("");
+                    let node_id = port_info["props"].get("node.id").and_then(|v| v.as_u64());
+                    if let Some(pid) = obj["id"].as_u64() {
+                        if node_id == Some(phys_id) && dir == "output" {
+                            phys_ports.push(pid);
+                        } else if node_id.is_some_and(|nid| capture_in_ids.contains(&nid)) && dir == "input" {
+                            cap_ports.push(pid);
+                        }
+                    }
+                }
+            }
+
+            for p_port in &phys_ports {
+                for c_port in &cap_ports {
+                    let _ = std::process::Command::new("pw-link")
+                        .stdin(std::process::Stdio::null())
+                        .args([&p_port.to_string(), &c_port.to_string()])
                         .output();
                 }
             }
         }
-    }
 }
 
 pub fn link_mic_dsp_to_virtual_mic() {
     std::thread::spawn(move || {
         let mut linked = false;
         for attempt in 1..=60 {
-            unlink_unwanted_mic_dsp_links();
             std::thread::sleep(std::time::Duration::from_millis(100));
+            unlink_unwanted_mic_dsp_links();
 
             let res_l = std::process::Command::new("pw-link")
+                .stdin(std::process::Stdio::null())
                 .args(["routune-mic-dsp-out:output_FL", "routune-virtual-mic:input_FL"])
                 .output();
             let res_r = std::process::Command::new("pw-link")
+                .stdin(std::process::Stdio::null())
                 .args(["routune-mic-dsp-out:output_FR", "routune-virtual-mic:input_FR"])
                 .output();
 
-            let l_ok = res_l.as_ref().map_or(false, |o| {
+            let l_ok = res_l.as_ref().is_ok_and(|o| {
                 o.status.success() || String::from_utf8_lossy(&o.stderr).contains("File exists")
             });
-            let r_ok = res_r.as_ref().map_or(false, |o| {
+            let r_ok = res_r.as_ref().is_ok_and(|o| {
                 o.status.success() || String::from_utf8_lossy(&o.stderr).contains("File exists")
             });
 
@@ -572,20 +702,23 @@ pub fn link_mic_dsp_to_virtual_mic() {
                 linked = true;
                 break;
             } else {
+                // Fallback attempt with ALSA plug-in name if pulse node property was delayed
                 let fb_l = std::process::Command::new("pw-link")
-                    .args(["routune-mic-dsp-out:output_FL", "routune-virtual-mic:playback_FL"])
+                    .stdin(std::process::Stdio::null())
+                    .args(["ALSA plug-in [routune-daemon]:output_FL", "routune-virtual-mic:input_FL"])
                     .output();
                 let fb_r = std::process::Command::new("pw-link")
-                    .args(["routune-mic-dsp-out:output_FR", "routune-virtual-mic:playback_FR"])
+                    .stdin(std::process::Stdio::null())
+                    .args(["ALSA plug-in [routune-daemon]:output_FR", "routune-virtual-mic:input_FR"])
                     .output();
-                let fb_l_ok = fb_l.as_ref().map_or(false, |o| {
+                let fb_l_ok = fb_l.as_ref().is_ok_and(|o| {
                     o.status.success() || String::from_utf8_lossy(&o.stderr).contains("File exists")
                 });
-                let fb_r_ok = fb_r.as_ref().map_or(false, |o| {
+                let fb_r_ok = fb_r.as_ref().is_ok_and(|o| {
                     o.status.success() || String::from_utf8_lossy(&o.stderr).contains("File exists")
                 });
                 if fb_l_ok && fb_r_ok {
-                    info!("Successfully linked routune-mic-dsp-out -> routune-virtual-mic (playback_FL/FR fallback) on attempt {attempt}");
+                    info!("Successfully linked routune-mic-dsp-out (via ALSA plugin name) -> routune-virtual-mic on attempt {attempt}");
                     linked = true;
                     break;
                 }
@@ -601,10 +734,20 @@ pub fn link_mic_dsp_to_virtual_mic() {
             std::thread::sleep(std::time::Duration::from_secs(2));
             unlink_unwanted_mic_dsp_links();
             let _ = std::process::Command::new("pw-link")
+                .stdin(std::process::Stdio::null())
                 .args(["routune-mic-dsp-out:output_FL", "routune-virtual-mic:input_FL"])
                 .output();
             let _ = std::process::Command::new("pw-link")
+                .stdin(std::process::Stdio::null())
                 .args(["routune-mic-dsp-out:output_FR", "routune-virtual-mic:input_FR"])
+                .output();
+            let _ = std::process::Command::new("pw-link")
+                .stdin(std::process::Stdio::null())
+                .args(["ALSA plug-in [routune-daemon]:output_FL", "routune-virtual-mic:input_FL"])
+                .output();
+            let _ = std::process::Command::new("pw-link")
+                .stdin(std::process::Stdio::null())
+                .args(["ALSA plug-in [routune-daemon]:output_FR", "routune-virtual-mic:input_FR"])
                 .output();
         }
     });
@@ -712,19 +855,23 @@ impl ChannelRouter {
             .or_else(|| self.host.default_output_device())
             .or_else(|| {
                 self.host.output_devices().ok()?.find(|d| {
-                    d.name().map_or(false, |n| n == "pulse" || n == "default" || n == "pipewire")
+                    d.name().is_ok_and(|n| n == "pulse" || n == "default" || n == "pipewire")
                 })
             })
             .context("No suitable output device for mic DSP output stream")?;
 
         let (config, sample_format) = choose_best_stream_config(&device, VIRTUAL_SINK_SAMPLE_RATE)?;
 
+        // PULSE_PROP is honoured by the PulseAudio ALSA plugin (which PipeWire emulates),
+        // correctly setting node.name on the PW node.
+        // NOTE: Do not include node.autoconnect=false here as libasound_module_pcm_pulse
+        // will timeout waiting for a ready state when autoconnect is disabled.
+        // Instead, autoconnected links to playback sinks are unlinked immediately below.
         unsafe {
             std::env::set_var(
-                "PIPEWIRE_PROPS",
-                "node.name=routune-mic-dsp-out node.autoconnect=false media.class=Stream/Output/Audio",
+                "PULSE_PROP",
+                "media.role=dsp node.name=routune-mic-dsp-out",
             );
-            std::env::set_var("PIPEWIRE_AUTOCONNECT", "false");
         }
 
         let is_active = Arc::new(AtomicBool::new(false));
@@ -732,8 +879,17 @@ impl ChannelRouter {
         let rms_db = Arc::new(AtomicU32::new((-100.0f32).to_bits()));
         let ring_buffer = self.pusher.mic.clone();
 
+        let last_err_ms = Arc::new(AtomicU64::new(0));
         let err_fn = move |err: cpal::StreamError| {
-            warn!("Mic DSP output stream error: {err:?}");
+            let now_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+            let prev = last_err_ms.load(Ordering::Relaxed);
+            if now_ms.saturating_sub(prev) >= 2000
+                && last_err_ms.compare_exchange(prev, now_ms, Ordering::SeqCst, Ordering::Relaxed).is_ok() {
+                warn!("Mic DSP output stream error: {err:?}");
+            }
         };
 
         let stream_res = build_channel_output_stream(
@@ -750,9 +906,7 @@ impl ChannelRouter {
         );
 
         unsafe {
-            std::env::remove_var("PULSE_PROP_node.name");
-            std::env::remove_var("PULSE_PROP_media.class");
-            std::env::remove_var("PIPEWIRE_NODE");
+            std::env::remove_var("PULSE_PROP");
             std::env::remove_var("PIPEWIRE_AUTOCONNECT");
             std::env::remove_var("PIPEWIRE_PROPS");
         }
@@ -837,13 +991,12 @@ impl ChannelRouter {
         let mut devices: Vec<cpal::Device> = self.host.input_devices().map(|d| d.collect()).unwrap_or_default();
         if let Ok(all_devs) = self.host.devices() {
             for dev in all_devs {
-                if !devices.iter().any(|existing| existing.name().ok() == dev.name().ok()) {
-                    if dev.default_input_config().is_ok()
-                        || dev.supported_input_configs().map(|mut it| it.next().is_some()).unwrap_or(false)
+                if !devices.iter().any(|existing| existing.name().ok() == dev.name().ok())
+                    && (dev.default_input_config().is_ok()
+                        || dev.supported_input_configs().map(|mut it| it.next().is_some()).unwrap_or(false))
                     {
                         devices.push(dev);
                     }
-                }
             }
         }
         for dev in devices {
@@ -879,7 +1032,7 @@ impl ChannelRouter {
         }
 
         let mut inputs: Vec<proto::OutputDeviceInfo> = dedup_map.into_values().map(|(info, _)| info).collect();
-        inputs.sort_by_key(|o| -score_physical_output_device(&o.name));
+        inputs.sort_by_key(|o| -score_physical_input_device(&o.name));
         inputs
     }
 
@@ -925,6 +1078,7 @@ impl ChannelRouter {
             let death_tx = self.death_tx.clone();
             let is_active = route.is_active.clone();
             let err_name = actual_name.clone();
+            let last_err_ms = Arc::new(AtomicU64::new(0));
 
             let mut formats_to_try = vec![sample_format];
             if !formats_to_try.contains(&SampleFormat::I16) {
@@ -941,10 +1095,19 @@ impl ChannelRouter {
                 let death_tx_cl = death_tx.clone();
                 let is_active_cl = is_active.clone();
                 let err_name_cl = err_name.clone();
+                let last_err_ms_cl = last_err_ms.clone();
                 let err_fn = move |err: cpal::StreamError| {
                     is_active_cl.store(false, Ordering::Relaxed);
-                    warn!("Mic stream error ({err_name_cl}): {err:?}");
-                    let _ = death_tx_cl.try_send(StreamDeathSignal::DeviceNotAvailable);
+                    let now_ms = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_millis() as u64)
+                        .unwrap_or(0);
+                    let prev = last_err_ms_cl.load(Ordering::Relaxed);
+                    if now_ms.saturating_sub(prev) >= 2000
+                        && last_err_ms_cl.compare_exchange(prev, now_ms, Ordering::SeqCst, Ordering::Relaxed).is_ok() {
+                            warn!("Mic stream error ({err_name_cl}): {err:?}");
+                            let _ = death_tx_cl.try_send(StreamDeathSignal::DeviceNotAvailable);
+                        }
                 };
 
                 match build_channel_input_stream(
@@ -1019,7 +1182,7 @@ impl ChannelRouter {
 
         // 3. Negotiate optimal 48kHz stream configuration
         let (config, sample_format) = choose_best_stream_config(&target_device, VIRTUAL_SINK_SAMPLE_RATE)?;
-        let is_primary_output = channel == 1 || (channel != 5 && self.routes.get(&1).map_or(true, |r| r.target_device.is_none()));
+        let is_primary_output = channel == 1 || (channel != 5 && self.routes.get(&1).is_none_or(|r| r.target_device.is_none()));
 
         let route = self.routes.get_mut(&channel)
             .ok_or_else(|| anyhow::anyhow!("Invalid audio channel: {channel}"))?;
@@ -1062,15 +1225,25 @@ impl ChannelRouter {
 
         let mut last_err = None;
         let mut built_stream = None;
+        let last_err_ms = Arc::new(AtomicU64::new(0));
 
         for fmt in formats_to_try {
             let death_tx_cl = death_tx.clone();
             let is_active_cl = is_active.clone();
             let err_name_cl = err_name.clone();
+            let last_err_ms_cl = last_err_ms.clone();
             let err_fn = move |err: cpal::StreamError| {
                 is_active_cl.store(false, Ordering::Relaxed);
-                warn!("Channel stream error ({err_name_cl}): {err:?}");
-                let _ = death_tx_cl.try_send(StreamDeathSignal::DeviceNotAvailable);
+                let now_ms = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_millis() as u64)
+                    .unwrap_or(0);
+                let prev = last_err_ms_cl.load(Ordering::Relaxed);
+                if now_ms.saturating_sub(prev) >= 2000
+                    && last_err_ms_cl.compare_exchange(prev, now_ms, Ordering::SeqCst, Ordering::Relaxed).is_ok() {
+                        warn!("Channel stream error ({err_name_cl}): {err:?}");
+                        let _ = death_tx_cl.try_send(StreamDeathSignal::DeviceNotAvailable);
+                    }
             };
 
             match build_channel_output_stream(
@@ -1133,11 +1306,10 @@ impl ChannelRouter {
 
         // 1. Direct exact match on raw ID / name across host devices
         for dev in &devices {
-            if let Ok(name) = dev.name() {
-                if name == q_trimmed || name.to_lowercase() == q_lower {
+            if let Ok(name) = dev.name()
+                && (name == q_trimmed || name.to_lowercase() == q_lower) {
                     return Some(dev.clone());
                 }
-            }
         }
 
         // 2. Exact ALSA CARD parameter match (e.g. sysdefault:CARD=Device vs front:CARD=Device,DEV=0)
@@ -1148,12 +1320,11 @@ impl ChannelRouter {
                     if is_rejected_device_name(&name) {
                         continue;
                     }
-                    if let Some(d_card) = extract_card_name(&name) {
-                        if d_card.eq_ignore_ascii_case(&q_card) {
+                    if let Some(d_card) = extract_card_name(&name)
+                        && d_card.eq_ignore_ascii_case(&q_card) {
                             let priority = device_id_priority(&name);
                             card_matches.push((dev.clone(), priority));
                         }
-                    }
                 }
             }
             if !card_matches.is_empty() {
@@ -1216,11 +1387,10 @@ impl ChannelRouter {
 
         // 1. Direct exact match on raw ID / name across host input devices
         for dev in &devices {
-            if let Ok(name) = dev.name() {
-                if name == q_trimmed || name.to_lowercase() == q_lower {
+            if let Ok(name) = dev.name()
+                && (name == q_trimmed || name.to_lowercase() == q_lower) {
                     return Some(dev.clone());
                 }
-            }
         }
 
         // 2. Exact ALSA CARD parameter match for capture devices
@@ -1231,12 +1401,11 @@ impl ChannelRouter {
                     if is_rejected_device_name(&name) {
                         continue;
                     }
-                    if let Some(d_card) = extract_card_name(&name) {
-                        if d_card.eq_ignore_ascii_case(&q_card) {
+                    if let Some(d_card) = extract_card_name(&name)
+                        && d_card.eq_ignore_ascii_case(&q_card) {
                             let priority = device_id_priority(&name);
                             card_matches.push((dev.clone(), priority));
                         }
-                    }
                 }
             }
             if !card_matches.is_empty() {
@@ -1273,6 +1442,18 @@ impl ChannelRouter {
                 }
                 if name.to_lowercase().contains(&q_lower) {
                     return Some(dev.clone());
+                }
+            }
+        }
+
+        // 5. Fallback for sound server bridges if target is a PipeWire source node or USB device not directly exposed by ALSA
+        if q_lower.starts_with("alsa_input.") || q_lower.contains("usb") {
+            for bridge_name in &["pulse", "pipewire", "default"] {
+                for dev in &devices {
+                    if let Ok(name) = dev.name()
+                        && name.eq_ignore_ascii_case(bridge_name) {
+                            return Some(dev.clone());
+                        }
                 }
             }
         }
@@ -1366,8 +1547,17 @@ impl ChannelRouter {
     pub fn try_recv_death_signal(&self) -> Option<StreamDeathSignal> {
         self.death_rx.try_recv().ok()
     }
+
+    pub fn cleanup_inactive_streams(&mut self) {
+        for route in self.routes.values_mut() {
+            if !route.is_active.load(Ordering::Relaxed) && route.output_stream.is_some() {
+                drop(route.output_stream.take());
+            }
+        }
+    }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_channel_output_stream(
     device: &cpal::Device,
     config: &StreamConfig,
@@ -1401,14 +1591,12 @@ fn build_channel_output_stream(
                             None => (0.0, 0.0),
                         };
 
-                        if test_mic {
-                            if let Some(ref m_buf) = mic_test_ring_buf {
-                                if let Some([ml, mr]) = m_buf.pop() {
+                        if test_mic
+                            && let Some(ref m_buf) = mic_test_ring_buf
+                                && let Some([ml, mr]) = m_buf.pop() {
                                     left += ml;
                                     right += mr;
                                 }
-                            }
-                        }
 
                         let left_clamped = left.clamp(-1.0, 1.0);
                         let right_clamped = right.clamp(-1.0, 1.0);
@@ -1453,14 +1641,12 @@ fn build_channel_output_stream(
                             None => (0.0, 0.0),
                         };
 
-                        if test_mic {
-                            if let Some(ref m_buf) = mic_test_ring_buf {
-                                if let Some([ml, mr]) = m_buf.pop() {
+                        if test_mic
+                            && let Some(ref m_buf) = mic_test_ring_buf
+                                && let Some([ml, mr]) = m_buf.pop() {
                                     left += ml;
                                     right += mr;
                                 }
-                            }
-                        }
 
                         let left_clamped = left.clamp(-1.0, 1.0);
                         let right_clamped = right.clamp(-1.0, 1.0);
@@ -1517,14 +1703,12 @@ fn build_channel_output_stream(
                             None => (0.0, 0.0),
                         };
 
-                        if test_mic {
-                            if let Some(ref m_buf) = mic_test_ring_buf {
-                                if let Some([ml, mr]) = m_buf.pop() {
+                        if test_mic
+                            && let Some(ref m_buf) = mic_test_ring_buf
+                                && let Some([ml, mr]) = m_buf.pop() {
                                     left += ml;
                                     right += mr;
                                 }
-                            }
-                        }
 
                         let left_clamped = left.clamp(-1.0, 1.0);
                         let right_clamped = right.clamp(-1.0, 1.0);
@@ -1581,14 +1765,12 @@ fn build_channel_output_stream(
                             None => (0.0, 0.0),
                         };
 
-                        if test_mic {
-                            if let Some(ref m_buf) = mic_test_ring_buf {
-                                if let Some([ml, mr]) = m_buf.pop() {
+                        if test_mic
+                            && let Some(ref m_buf) = mic_test_ring_buf
+                                && let Some([ml, mr]) = m_buf.pop() {
                                     left += ml;
                                     right += mr;
                                 }
-                            }
-                        }
 
                         let left_clamped = left.clamp(-1.0, 1.0);
                         let right_clamped = right.clamp(-1.0, 1.0);
@@ -1665,11 +1847,10 @@ pub fn resolve_hardware_card_name(card_raw: &str, is_input: bool) -> String {
     let lower = raw_trimmed.to_lowercase();
 
     // 1. Check in-memory cache populated dynamically from PipeWire device announcements
-    if let Ok(cache) = get_device_name_cache().read() {
-        if let Some(desc) = cache.get(&lower) {
+    if let Ok(cache) = get_device_name_cache().read()
+        && let Some(desc) = cache.get(&lower) {
             return desc.clone();
         }
-    }
 
     // 2. Query Linux /sys/class/sound/ and udevadm for dynamic hardware driver and model info
     #[cfg(target_os = "linux")]
@@ -1686,8 +1867,7 @@ pub fn resolve_hardware_card_name(card_raw: &str, is_input: bool) -> String {
                             if let Ok(output) = std::process::Command::new("udevadm")
                                 .args(["info", "-q", "property", card_dir.to_str().unwrap_or("")])
                                 .output()
-                            {
-                                if output.status.success() {
+                                && output.status.success() {
                                     let text = String::from_utf8_lossy(&output.stdout);
                                     let mut model = None;
                                     for line in text.lines() {
@@ -1708,7 +1888,6 @@ pub fn resolve_hardware_card_name(card_raw: &str, is_input: bool) -> String {
                                         return final_name;
                                     }
                                 }
-                            }
 
                             // Fallback: check pcm info from ALSA
                             let pcm_file = if is_input {
@@ -1896,6 +2075,45 @@ pub fn score_physical_output_device(name: &str) -> i32 {
     }
     if lower == "default" {
         score -= 30;
+    }
+
+    score
+}
+
+pub fn score_physical_input_device(name: &str) -> i32 {
+    let lower = name.to_lowercase();
+    if is_rejected_device_name(&lower) {
+        return -1000;
+    }
+
+    let disp = format_input_device_display_name(name).to_lowercase();
+
+    let mut score = 0;
+    if lower.contains("usb") || disp.contains("usb") {
+        score += 50;
+    }
+    if lower.contains("mic") || disp.contains("mic") || lower.contains("input") || disp.contains("input") {
+        score += 30;
+    }
+    if lower.contains("headset") || disp.contains("headset") {
+        score += 25;
+    }
+
+    if lower == "pipewire" {
+        score += 25;
+    } else if lower == "pulse" {
+        score += 24;
+    } else if lower == "default" {
+        score += 20;
+    }
+
+    if lower.contains("card=") {
+        if lower.contains("usb") {
+            score += 20;
+        } else {
+            // Motherboard PCI analog jacks often unplugged, rank below sound server bridges
+            score -= 10;
+        }
     }
 
     score
@@ -2128,6 +2346,7 @@ pub fn choose_best_input_stream_config(
     ))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_channel_input_stream(
     device: &cpal::Device,
     config: &StreamConfig,
@@ -2543,6 +2762,23 @@ mod tests {
         assert!(usb_score > pipewire_bridge_score);
         assert!(pci_score > default_bridge_score);
         assert!(pci_score > pipewire_bridge_score);
+    }
+
+    #[test]
+    fn test_input_device_scoring_prefers_usb_and_bridges() {
+        let routune_score = score_physical_input_device("Routune Mic");
+        assert_eq!(routune_score, -1000);
+
+        let pipewire_score = score_physical_input_device("pipewire");
+        let pulse_score = score_physical_input_device("pulse");
+        let default_score = score_physical_input_device("default");
+        let usb_mic_score = score_physical_input_device("sysdefault:CARD=Device (USB Audio)");
+        let onboard_score = score_physical_input_device("sysdefault:CARD=Generic_1");
+
+        assert!(usb_mic_score > pipewire_score);
+        assert!(pipewire_score > onboard_score);
+        assert!(pulse_score > onboard_score);
+        assert!(default_score > onboard_score);
     }
 
     #[test]

@@ -224,23 +224,21 @@ fn sync_hyprland_shortcuts(
         let symlink_path = local_bin.join("routune-daemon");
         if !symlink_path.exists() {
             let _ = std::fs::create_dir_all(&local_bin);
-            if let Ok(exe) = std::env::current_exe() {
-                if let Some(bin_dir) = exe.parent() {
+            if let Ok(exe) = std::env::current_exe()
+                && let Some(bin_dir) = exe.parent() {
                     let candidate = bin_dir.join("routune-daemon");
                     if candidate.exists() {
                         let _ = std::os::unix::fs::symlink(candidate, &symlink_path);
                     }
                 }
-            }
         }
 
         // Ensure hyprland.lua contains optional("routune")
-        if let Ok(content) = std::fs::read_to_string(&hypr_lua) {
-            if !content.contains("optional(\"routune\")") {
+        if let Ok(content) = std::fs::read_to_string(&hypr_lua)
+            && !content.contains("optional(\"routune\")") {
                 let updated = format!("{}\n\n-- Routune hotkeys (the app owns it)\noptional(\"routune\")\n", content.trim_end());
                 let _ = std::fs::write(&hypr_lua, updated);
             }
-        }
 
         fn to_hypr_combo(combo: &str) -> Option<String> {
             let trimmed = combo.trim();

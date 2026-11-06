@@ -93,6 +93,7 @@ pub trait TelemetryMetricsProvider: Send + Sync {
     ) -> Result<(), &'static str> {
         Ok(())
     }
+    #[allow(clippy::too_many_arguments)]
     fn set_compressor(
         &self,
         _channel: routune_core::graph::VirtualChannel,
@@ -403,11 +404,10 @@ impl proto::routune_control_server::RoutuneControl for ControlServiceImpl {
         }
 
         let clamped_gain = req.gain_db.clamp(-12.0, 12.0);
-        if let Some(ref provider) = self.provider {
-            if let Err(err) = provider.update_eq(virtual_channel, req.band_index as usize, clamped_gain) {
+        if let Some(ref provider) = self.provider
+            && let Err(err) = provider.update_eq(virtual_channel, req.band_index as usize, clamped_gain) {
                 return Err(Status::internal(format!("Failed to update EQ band: {err}")));
             }
-        }
 
         if let Some(ref config_manager) = self.config_manager {
             config_manager.set_eq_band(virtual_channel, req.band_index as usize, clamped_gain).await;
@@ -511,8 +511,8 @@ impl proto::routune_control_server::RoutuneControl for ControlServiceImpl {
             Err(_) => return Err(Status::invalid_argument("Invalid channel")),
         };
         let cfg = req.config.unwrap_or_default();
-        if let Some(ref provider) = self.provider {
-            if let Err(err) = provider.set_noise_gate(
+        if let Some(ref provider) = self.provider
+            && let Err(err) = provider.set_noise_gate(
                 virtual_channel,
                 cfg.enabled,
                 cfg.threshold_db,
@@ -521,7 +521,6 @@ impl proto::routune_control_server::RoutuneControl for ControlServiceImpl {
             ) {
                 return Err(Status::internal(format!("Failed to set noise gate: {err}")));
             }
-        }
         if let Some(ref config_manager) = self.config_manager {
             config_manager
                 .set_noise_gate(cfg.enabled, cfg.threshold_db, cfg.attack_ms, cfg.release_ms)
@@ -541,8 +540,8 @@ impl proto::routune_control_server::RoutuneControl for ControlServiceImpl {
             Err(_) => return Err(Status::invalid_argument("Invalid channel")),
         };
         let cfg = req.config.unwrap_or_default();
-        if let Some(ref provider) = self.provider {
-            if let Err(err) = provider.set_compressor(
+        if let Some(ref provider) = self.provider
+            && let Err(err) = provider.set_compressor(
                 virtual_channel,
                 cfg.enabled,
                 cfg.threshold_db,
@@ -553,7 +552,6 @@ impl proto::routune_control_server::RoutuneControl for ControlServiceImpl {
             ) {
                 return Err(Status::internal(format!("Failed to set compressor: {err}")));
             }
-        }
         if let Some(ref config_manager) = self.config_manager {
             config_manager
                 .set_compressor(
@@ -586,11 +584,10 @@ impl proto::routune_control_server::RoutuneControl for ControlServiceImpl {
 
         let clamped_volume = req.volume_db.clamp(-48.0, 12.0);
 
-        if let Some(ref provider) = self.provider {
-            if let Err(err) = provider.set_volume(virtual_channel, clamped_volume) {
+        if let Some(ref provider) = self.provider
+            && let Err(err) = provider.set_volume(virtual_channel, clamped_volume) {
                 return Err(Status::internal(format!("Failed to set channel volume: {err}")));
             }
-        }
 
         if let Some(ref config_manager) = self.config_manager {
             config_manager.set_volume(virtual_channel, clamped_volume).await;
@@ -614,11 +611,10 @@ impl proto::routune_control_server::RoutuneControl for ControlServiceImpl {
             Err(_) => return Err(Status::invalid_argument("Invalid channel")),
         };
 
-        if let Some(ref provider) = self.provider {
-            if let Err(err) = provider.set_mute(virtual_channel, req.muted) {
+        if let Some(ref provider) = self.provider
+            && let Err(err) = provider.set_mute(virtual_channel, req.muted) {
                 return Err(Status::internal(format!("Failed to set channel mute: {err}")));
             }
-        }
 
         if let Some(ref config_manager) = self.config_manager {
             config_manager.set_mute(virtual_channel, req.muted).await;
@@ -838,10 +834,10 @@ pub async fn run_telemetry_dispatcher(
             if let Some(c_enum) = &mut consumer {
                 match c_enum {
                     TelemetryConsumer::RingBuffer(c) => {
-                        while let Ok(_) = c.pop() {}
+                        while c.pop().is_ok() {}
                     }
                     TelemetryConsumer::Channel(rx) => {
-                        while let Ok(_) = rx.try_recv() {}
+                        while rx.try_recv().is_ok() {}
                     }
                 }
             }
@@ -954,8 +950,8 @@ pub async fn run_telemetry_dispatcher(
         };
 
         // Merge router channel metrics if active
-        if let Some(r_mutex) = &router {
-            if let Ok(r) = r_mutex.try_lock() {
+        if let Some(r_mutex) = &router
+            && let Ok(r) = r_mutex.try_lock() {
                 let (r_peak, r_rms) = r.get_master_metrics();
                 if r_peak > latest_peak { latest_peak = r_peak; }
                 if r_rms > rms_db { rms_db = r_rms; }
@@ -971,7 +967,6 @@ pub async fn run_telemetry_dispatcher(
                     }
                 }
             }
-        }
 
         let telemetry = proto::AudioTelemetry {
             peak_volume_db: latest_peak,
