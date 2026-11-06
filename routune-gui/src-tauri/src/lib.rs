@@ -224,13 +224,22 @@ fn sync_hyprland_shortcuts(
         let symlink_path = local_bin.join("routune-daemon");
         if !symlink_path.exists() {
             let _ = std::fs::create_dir_all(&local_bin);
+            let mut candidates = Vec::new();
             if let Ok(exe) = std::env::current_exe()
                 && let Some(bin_dir) = exe.parent() {
-                    let candidate = bin_dir.join("routune-daemon");
-                    if candidate.exists() {
-                        let _ = std::os::unix::fs::symlink(candidate, &symlink_path);
-                    }
+                candidates.push(bin_dir.join("routune-daemon"));
+            }
+            if let Ok(appdir) = std::env::var("APPDIR") {
+                candidates.push(std::path::PathBuf::from(appdir).join("usr/bin/routune-daemon"));
+            }
+            candidates.push(std::path::PathBuf::from("/usr/bin/routune-daemon"));
+
+            for candidate in candidates {
+                if candidate.is_file() {
+                    let _ = std::os::unix::fs::symlink(candidate, &symlink_path);
+                    break;
                 }
+            }
         }
 
         // Ensure hyprland.lua contains optional("routune")
@@ -294,6 +303,74 @@ fn sync_hyprland_shortcuts(
     }
 }
 
+fn ensure_daemon_running() {
+    let is_running = || {
+        std::net::TcpStream::connect_timeout(
+            &std::net::SocketAddr::from(([127, 0, 0, 1], 50051)),
+            std::time::Duration::from_millis(150),
+        ).is_ok()
+    };
+
+    if is_running() {
+        return;
+    }
+
+    // Try starting systemd user service first
+    let _ = std::process::Command::new("systemctl")
+        .args(["--user", "start", "routune.service"])
+        .status();
+
+    for _ in 0..10 {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        if is_running() {
+            return;
+        }
+    }
+
+    // Fallback: search for routune-daemon binary
+    let mut candidates = Vec::new();
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(dir) = exe.parent() {
+        candidates.push(dir.join("routune-daemon"));
+    }
+    if let Ok(appdir) = std::env::var("APPDIR") {
+        candidates.push(std::path::PathBuf::from(appdir).join("usr/bin/routune-daemon"));
+    }
+    if let Ok(home) = std::env::var("HOME") {
+        candidates.push(std::path::PathBuf::from(home).join(".local/bin/routune-daemon"));
+    }
+    candidates.push(std::path::PathBuf::from("/usr/bin/routune-daemon"));
+    candidates.push(std::path::PathBuf::from("/usr/local/bin/routune-daemon"));
+
+    for bin in candidates {
+        if bin.is_file() {
+            let mut cmd = std::process::Command::new(&bin);
+            cmd.stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null());
+
+            #[cfg(target_os = "linux")]
+            unsafe {
+                use std::os::unix::process::CommandExt;
+                cmd.pre_exec(|| {
+                    libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM);
+                    Ok(())
+                });
+            }
+
+            if cmd.spawn().is_ok() {
+                for _ in 0..15 {
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                    if is_running() {
+                        return;
+                    }
+                }
+            }
+            break;
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     #[cfg(target_os = "linux")]
@@ -305,6 +382,12 @@ pub fn run() {
             Some(vec!["--minimized"]),
         ))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .setup(|_app| {
+            std::thread::spawn(move || {
+                ensure_daemon_running();
+            });
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             get_gui_status,
             app_minimize,
