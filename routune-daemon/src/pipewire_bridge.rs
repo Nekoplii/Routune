@@ -693,6 +693,7 @@ impl PipeWireBridgeService {
                     *pw::keys::MEDIA_CATEGORY => "Monitor",
                     *pw::keys::STREAM_CAPTURE_SINK => "true",
                     *pw::keys::STREAM_MONITOR => "true",
+                    *pw::keys::NODE_PASSIVE => "true",
                     *pw::keys::NODE_NAME => "routune-desktop-monitor",
                     *pw::keys::NODE_DESCRIPTION => "Routune Desktop Audio Monitor",
                     *pw::keys::AUDIO_CHANNELS => "2",

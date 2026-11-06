@@ -411,7 +411,7 @@ impl NativeVirtualMic {
             use std::io::Write;
             writeln!(
                 stdin,
-                "create-node adapter {{ factory.name=support.null-audio-sink node.name=\"routune-virtual-mic\" node.description=\"Routune Mic\" media.class=Audio/Source/Virtual audio.position=[FL FR] }}"
+                "create-node adapter {{ factory.name=support.null-audio-sink node.name=\"routune-virtual-mic\" node.description=\"Routune Mic\" media.class=Audio/Duplex audio.position=[FL FR] }}"
             )?;
             stdin.flush()?;
         }
@@ -541,13 +541,14 @@ pub fn link_mic_dsp_to_virtual_mic() {
     std::thread::spawn(move || {
         let mut linked = false;
         for attempt in 1..=30 {
+            unlink_unwanted_mic_dsp_links();
             std::thread::sleep(std::time::Duration::from_millis(100));
 
             let res_l = std::process::Command::new("pw-link")
-                .args(["routune-mic-dsp-out:output_FL", "routune-virtual-mic:input_FL"])
+                .args(["routune-mic-dsp-out:output_FL", "routune-virtual-mic:playback_FL"])
                 .output();
             let res_r = std::process::Command::new("pw-link")
-                .args(["routune-mic-dsp-out:output_FR", "routune-virtual-mic:input_FR"])
+                .args(["routune-mic-dsp-out:output_FR", "routune-virtual-mic:playback_FR"])
                 .output();
 
             let l_ok = res_l.as_ref().map_or(false, |o| {
@@ -561,6 +562,24 @@ pub fn link_mic_dsp_to_virtual_mic() {
                 info!("Successfully linked routune-mic-dsp-out -> routune-virtual-mic on attempt {attempt}");
                 linked = true;
                 break;
+            } else {
+                let fb_l = std::process::Command::new("pw-link")
+                    .args(["routune-mic-dsp-out:output_FL", "routune-virtual-mic:input_FL"])
+                    .output();
+                let fb_r = std::process::Command::new("pw-link")
+                    .args(["routune-mic-dsp-out:output_FR", "routune-virtual-mic:input_FR"])
+                    .output();
+                let fb_l_ok = fb_l.as_ref().map_or(false, |o| {
+                    o.status.success() || String::from_utf8_lossy(&o.stderr).contains("File exists")
+                });
+                let fb_r_ok = fb_r.as_ref().map_or(false, |o| {
+                    o.status.success() || String::from_utf8_lossy(&o.stderr).contains("File exists")
+                });
+                if fb_l_ok && fb_r_ok {
+                    info!("Successfully linked routune-mic-dsp-out -> routune-virtual-mic (input_FL/FR fallback) on attempt {attempt}");
+                    linked = true;
+                    break;
+                }
             }
         }
 
@@ -686,14 +705,11 @@ impl ChannelRouter {
         let (config, sample_format) = choose_best_stream_config(&device, VIRTUAL_SINK_SAMPLE_RATE)?;
 
         unsafe {
-            std::env::set_var("PULSE_PROP_node.name", "routune-mic-dsp-out");
-            std::env::set_var("PULSE_PROP_media.class", "Stream/Output/Audio");
-            std::env::set_var("PIPEWIRE_NODE", "routune-virtual-mic");
-            std::env::set_var("PIPEWIRE_AUTOCONNECT", "false");
             std::env::set_var(
                 "PIPEWIRE_PROPS",
-                "node.name=routune-mic-dsp-out media.class=Stream/Output/Audio node.autoconnect=false target.object=routune-virtual-mic",
+                "node.name=routune-mic-dsp-out media.class=Stream/Output/Audio target.object=routune-virtual-mic",
             );
+            std::env::set_var("PIPEWIRE_NODE", "routune-virtual-mic");
         }
 
         let is_active = Arc::new(AtomicBool::new(false));
@@ -744,6 +760,7 @@ impl ChannelRouter {
 
         // Step 3: The Auto-Link Bridge (pw-link)
         link_mic_dsp_to_virtual_mic();
+        unlink_unwanted_mic_dsp_links();
 
         Ok(())
     }
@@ -882,28 +899,72 @@ impl ChannelRouter {
             let death_tx = self.death_tx.clone();
             let is_active = route.is_active.clone();
             let err_name = actual_name.clone();
-            let err_fn = move |err: cpal::StreamError| {
-                is_active.store(false, Ordering::Relaxed);
-                warn!("Mic stream error ({err_name}): {err:?}");
-                let _ = death_tx.try_send(StreamDeathSignal::DeviceNotAvailable);
-            };
 
-            let stream = build_channel_input_stream(
-                &target_device,
-                &config,
-                sample_format,
-                self.pusher.mic.clone(),
-                self.pusher.mic_cmd_rx.clone(),
-                self.pusher.mic_peak.clone(),
-                self.pusher.mic_rms.clone(),
-                route.is_active.clone(),
-                self.pusher.mic_noise_enabled.clone(),
-                err_fn,
-                self.pusher.mic_test_enabled.clone(),
-                self.pusher.mic_test.clone(),
-            )?;
+            let mut formats_to_try = vec![sample_format];
+            if !formats_to_try.contains(&SampleFormat::I16) {
+                formats_to_try.push(SampleFormat::I16);
+            }
+            if !formats_to_try.contains(&SampleFormat::F32) {
+                formats_to_try.push(SampleFormat::F32);
+            }
 
-            stream.play().context("Failed to start mic capture stream")?;
+            let mut last_err = None;
+            let mut built_stream = None;
+
+            for fmt in formats_to_try {
+                let death_tx_cl = death_tx.clone();
+                let is_active_cl = is_active.clone();
+                let err_name_cl = err_name.clone();
+                let err_fn = move |err: cpal::StreamError| {
+                    is_active_cl.store(false, Ordering::Relaxed);
+                    warn!("Mic stream error ({err_name_cl}): {err:?}");
+                    let _ = death_tx_cl.try_send(StreamDeathSignal::DeviceNotAvailable);
+                };
+
+                match build_channel_input_stream(
+                    &target_device,
+                    &config,
+                    fmt,
+                    self.pusher.mic.clone(),
+                    self.pusher.mic_cmd_rx.clone(),
+                    self.pusher.mic_peak.clone(),
+                    self.pusher.mic_rms.clone(),
+                    route.is_active.clone(),
+                    self.pusher.mic_noise_enabled.clone(),
+                    err_fn,
+                    self.pusher.mic_test_enabled.clone(),
+                    self.pusher.mic_test.clone(),
+                ) {
+                    Ok(stream) => match stream.play() {
+                        Ok(()) => {
+                            if fmt != sample_format {
+                                info!(
+                                    "Successfully bound Mic input using fallback format {:?} -> '{}'",
+                                    fmt, actual_name
+                                );
+                            }
+                            built_stream = Some(stream);
+                            break;
+                        }
+                        Err(play_err) => {
+                            warn!("Failed to start mic capture stream ({fmt:?}): {play_err:?}");
+                            last_err = Some(anyhow::anyhow!(play_err));
+                        }
+                    },
+                    Err(build_err) => {
+                        tracing::debug!(
+                            "Mic input stream build failed for format {:?} on '{}': {build_err:?}",
+                            fmt, actual_name
+                        );
+                        last_err = Some(build_err);
+                    }
+                }
+            }
+
+            let stream = built_stream.ok_or_else(|| {
+                last_err.unwrap_or_else(|| anyhow::anyhow!("Failed to build mic stream for {actual_name}"))
+            })?;
+
             route.output_stream = Some(stream);
             route.target_device = Some(actual_name.clone());
             route.is_active.store(true, Ordering::Relaxed);
@@ -953,11 +1014,6 @@ impl ChannelRouter {
         let death_tx = self.death_tx.clone();
         let is_active = route.is_active.clone();
         let err_name = actual_name.clone();
-        let err_fn = move |err: cpal::StreamError| {
-            is_active.store(false, Ordering::Relaxed);
-            warn!("Channel stream error ({err_name}): {err:?}");
-            let _ = death_tx.try_send(StreamDeathSignal::DeviceNotAvailable);
-        };
 
         let mic_test_enabled = if is_primary_output {
             Some(self.pusher.mic_test_enabled.clone())
@@ -970,20 +1026,69 @@ impl ChannelRouter {
             None
         };
 
-        let stream = build_channel_output_stream(
-            &target_device,
-            &config,
-            sample_format,
-            route.ring_buffer.clone(),
-            route.peak_db.clone(),
-            route.rms_db.clone(),
-            route.is_active.clone(),
-            err_fn,
-            mic_test_enabled,
-            mic_test_ring_buf,
-        )?;
+        let mut formats_to_try = vec![sample_format];
+        if !formats_to_try.contains(&SampleFormat::I16) {
+            formats_to_try.push(SampleFormat::I16);
+        }
+        if !formats_to_try.contains(&SampleFormat::F32) {
+            formats_to_try.push(SampleFormat::F32);
+        }
 
-        stream.play().context("Failed to start channel physical stream")?;
+        let mut last_err = None;
+        let mut built_stream = None;
+
+        for fmt in formats_to_try {
+            let death_tx_cl = death_tx.clone();
+            let is_active_cl = is_active.clone();
+            let err_name_cl = err_name.clone();
+            let err_fn = move |err: cpal::StreamError| {
+                is_active_cl.store(false, Ordering::Relaxed);
+                warn!("Channel stream error ({err_name_cl}): {err:?}");
+                let _ = death_tx_cl.try_send(StreamDeathSignal::DeviceNotAvailable);
+            };
+
+            match build_channel_output_stream(
+                &target_device,
+                &config,
+                fmt,
+                route.ring_buffer.clone(),
+                route.peak_db.clone(),
+                route.rms_db.clone(),
+                route.is_active.clone(),
+                err_fn,
+                mic_test_enabled.clone(),
+                mic_test_ring_buf.clone(),
+            ) {
+                Ok(stream) => match stream.play() {
+                    Ok(()) => {
+                        if fmt != sample_format {
+                            info!(
+                                "Successfully bound channel {} using fallback format {:?} -> '{}'",
+                                route.channel_name, fmt, actual_name
+                            );
+                        }
+                        built_stream = Some(stream);
+                        break;
+                    }
+                    Err(play_err) => {
+                        warn!("Failed to start channel physical stream ({fmt:?}): {play_err:?}");
+                        last_err = Some(anyhow::anyhow!(play_err));
+                    }
+                },
+                Err(build_err) => {
+                    tracing::debug!(
+                        "Stream build failed for format {:?} on '{}': {build_err:?}",
+                        fmt, actual_name
+                    );
+                    last_err = Some(build_err);
+                }
+            }
+        }
+
+        let stream = built_stream.ok_or_else(|| {
+            last_err.unwrap_or_else(|| anyhow::anyhow!("Failed to build channel stream for {actual_name}"))
+        })?;
+
         route.output_stream = Some(stream);
         route.target_device = Some(actual_name.clone());
         route.is_active.store(true, Ordering::Relaxed);
@@ -1828,6 +1933,11 @@ pub fn choose_best_stream_config(
         }
     };
 
+    let dev_name = device.name().unwrap_or_default();
+    let is_hw_card = dev_name.contains("CARD=") || dev_name.starts_with("hw:") || dev_name.starts_with("front:");
+    let default_cfg = device.default_output_config().ok();
+    let default_fmt = default_cfg.as_ref().map(|d| d.sample_format());
+
     if !supported.is_empty() {
         let rate_matching: Vec<_> = supported
             .iter()
@@ -1841,12 +1951,26 @@ pub fn choose_best_stream_config(
             supported.clone()
         };
 
-        let format_rank = |fmt: SampleFormat| match fmt {
-            SampleFormat::F32 => 0,
-            SampleFormat::I16 => 1,
-            SampleFormat::I32 => 2,
-            SampleFormat::U16 => 3,
-            _ => 10,
+        let format_rank = |fmt: SampleFormat| {
+            if Some(fmt) == default_fmt {
+                0
+            } else if is_hw_card {
+                match fmt {
+                    SampleFormat::I16 => 1,
+                    SampleFormat::F32 => 2,
+                    SampleFormat::I32 => 3,
+                    SampleFormat::U16 => 4,
+                    _ => 10,
+                }
+            } else {
+                match fmt {
+                    SampleFormat::F32 => 1,
+                    SampleFormat::I16 => 2,
+                    SampleFormat::I32 => 3,
+                    SampleFormat::U16 => 4,
+                    _ => 10,
+                }
+            }
         };
 
         let channel_rank = |ch: u16| {
@@ -1876,20 +2000,25 @@ pub fn choose_best_stream_config(
         }
     }
 
-    if let Ok(def) = device.default_output_config() {
+    if let Some(def) = default_cfg {
         let fmt = def.sample_format();
         let stream_cfg = def.into();
         return Ok((stream_cfg, fmt));
     }
 
-    // Fallback if device configuration query failed (e.g. ALSA slave locked)
+    let fallback_fmt = if is_hw_card {
+        SampleFormat::I16
+    } else {
+        SampleFormat::F32
+    };
+
     Ok((
         StreamConfig {
             channels: 2,
             sample_rate: cpal::SampleRate(target_rate),
             buffer_size: cpal::BufferSize::Default,
         },
-        SampleFormat::F32,
+        fallback_fmt,
     ))
 }
 
@@ -1905,6 +2034,11 @@ pub fn choose_best_input_stream_config(
         }
     };
 
+    let dev_name = device.name().unwrap_or_default();
+    let is_hw_card = dev_name.contains("CARD=") || dev_name.starts_with("hw:") || dev_name.starts_with("front:");
+    let default_cfg = device.default_input_config().ok();
+    let default_fmt = default_cfg.as_ref().map(|d| d.sample_format());
+
     if !supported.is_empty() {
         let rate_matching: Vec<_> = supported
             .iter()
@@ -1918,12 +2052,26 @@ pub fn choose_best_input_stream_config(
             supported.clone()
         };
 
-        let format_rank = |fmt: SampleFormat| match fmt {
-            SampleFormat::F32 => 0,
-            SampleFormat::I16 => 1,
-            SampleFormat::I32 => 2,
-            SampleFormat::U16 => 3,
-            _ => 10,
+        let format_rank = |fmt: SampleFormat| {
+            if Some(fmt) == default_fmt {
+                0
+            } else if is_hw_card {
+                match fmt {
+                    SampleFormat::I16 => 1,
+                    SampleFormat::F32 => 2,
+                    SampleFormat::I32 => 3,
+                    SampleFormat::U16 => 4,
+                    _ => 10,
+                }
+            } else {
+                match fmt {
+                    SampleFormat::F32 => 1,
+                    SampleFormat::I16 => 2,
+                    SampleFormat::I32 => 3,
+                    SampleFormat::U16 => 4,
+                    _ => 10,
+                }
+            }
         };
 
         let channel_rank = |ch: u16| {
@@ -1953,11 +2101,17 @@ pub fn choose_best_input_stream_config(
         }
     }
 
-    if let Ok(def) = device.default_input_config() {
+    if let Some(def) = default_cfg {
         let fmt = def.sample_format();
         let stream_cfg = def.into();
         return Ok((stream_cfg, fmt));
     }
+
+    let fallback_fmt = if is_hw_card {
+        SampleFormat::I16
+    } else {
+        SampleFormat::F32
+    };
 
     Ok((
         StreamConfig {
@@ -1965,7 +2119,7 @@ pub fn choose_best_input_stream_config(
             sample_rate: cpal::SampleRate(target_rate),
             buffer_size: cpal::BufferSize::Default,
         },
-        SampleFormat::F32,
+        fallback_fmt,
     ))
 }
 
