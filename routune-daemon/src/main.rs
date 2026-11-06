@@ -164,10 +164,12 @@ async fn main() -> Result<()> {
             }
 
             // Periodic auto-recovery check (on death signal or every 3 seconds)
-            if death_signal.is_some() || loop_count.is_multiple_of(6) {
+            if death_signal.is_some() {
                 #[cfg(target_os = "linux")]
                 tokio::task::spawn_blocking(audio::unlink_unwanted_mic_dsp_links);
+            }
 
+            if death_signal.is_some() || loop_count.is_multiple_of(6) {
                 let cfg = recovery_config.get_config().await;
                 let ch_targets = [
                     (server::proto::AudioChannel::Game as i32, cfg.get_route(VirtualChannel::Game)),

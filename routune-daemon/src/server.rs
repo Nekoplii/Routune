@@ -834,6 +834,21 @@ pub async fn run_telemetry_dispatcher(
     loop {
         interval.tick().await;
 
+        if telemetry_tx.receiver_count() == 0 {
+            if let Some(c_enum) = &mut consumer {
+                match c_enum {
+                    TelemetryConsumer::RingBuffer(c) => {
+                        while let Ok(_) = c.pop() {}
+                    }
+                    TelemetryConsumer::Channel(rx) => {
+                        while let Ok(_) = rx.try_recv() {}
+                    }
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            continue;
+        }
+
         let mut latest_peak = -100.0f32;
         let mut sum_rms_db = 0.0f32;
         let mut sample_count = 0usize;

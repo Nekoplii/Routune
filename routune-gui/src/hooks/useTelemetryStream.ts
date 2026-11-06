@@ -15,7 +15,7 @@ export function useTelemetryStream() {
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
     async function connectAndStream() {
-      if (isCancelled) return;
+      if (isCancelled || document.hidden) return;
 
       abortController = new AbortController();
       setConnectionStatus("connecting");
@@ -89,12 +89,12 @@ export function useTelemetryStream() {
         }
 
         // Stream completed gracefully
-        if (!isCancelled) {
+        if (!isCancelled && !document.hidden) {
           setConnectionStatus("disconnected");
           scheduleReconnect();
         }
       } catch (err: unknown) {
-        if (isCancelled) return;
+        if (isCancelled || document.hidden) return;
         const msg = err instanceof Error ? err.message : String(err);
         setConnectionStatus("error", msg);
         scheduleReconnect();
@@ -102,7 +102,7 @@ export function useTelemetryStream() {
     }
 
     function scheduleReconnect() {
-      if (isCancelled) return;
+      if (isCancelled || document.hidden) return;
       reconnectTimer = setTimeout(() => {
         connectAndStream();
       }, 1500);
@@ -110,12 +110,30 @@ export function useTelemetryStream() {
 
     connectAndStream();
 
+    const onVisibilityChange = () => {
+      if (document.hidden) {
+        if (abortController) {
+          abortController.abort();
+          abortController = null;
+        }
+      } else {
+        if (!isCancelled) {
+          if (reconnectTimer) {
+            clearTimeout(reconnectTimer);
+            reconnectTimer = null;
+          }
+          connectAndStream();
+        }
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
     // Poll daemon config periodically and on window focus so external toggles (e.g. Hyprland shortcuts) sync to UI
     const configSyncInterval = setInterval(() => {
-      if (!isCancelled && useAudioStore.getState().connectionStatus === "connected") {
+      if (!isCancelled && !document.hidden && useAudioStore.getState().connectionStatus === "connected") {
         useAudioStore.getState().fetchDaemonConfig();
       }
-    }, 500);
+    }, 1000);
 
     const onFocus = () => {
       if (!isCancelled && useAudioStore.getState().connectionStatus === "connected") {
@@ -128,6 +146,7 @@ export function useTelemetryStream() {
       isCancelled = true;
       clearInterval(configSyncInterval);
       window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
       if (abortController) {
         abortController.abort();
       }

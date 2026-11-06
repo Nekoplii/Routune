@@ -29,3 +29,10 @@ tonic = "0.12"
 tonic-web = "0.12"
 prost = "0.13"
 tonic-build = "0.12"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+strip = true
