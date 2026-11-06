@@ -7,20 +7,20 @@ Audio routing and DSP daemon for Linux. The daemon manages all hardware I/O and 
 ## Features
 
 - **Virtual audio routing** — PipeWire node graph with per-application channel assignment (Game, Chat, Media, Aux, Mic)
-- **Virtual microphone pipeline** — Dedicated native PipeWire virtual source (`routune-virtual-mic`) ready for Discord, OBS, and games with zero feedback loops
+- **Virtual microphone pipeline** — Dedicated native PipeWire virtual source (`routune-virtual-mic`) for Discord, OBS, and games with zero feedback loops
 - **Full microphone DSP suite**:
-    - **AI noise suppression** — RNNoise via `nnnoiseless` with real-time attenuation level control
-    - **Noise gate** — Configurable threshold, attack, and release to eliminate background room noise
+    - **Noise suppression** — RNNoise neural speech enhancement via `nnnoiseless` with adjustable blend control
+    - **Noise gate** — Configurable threshold, attack, and release to eliminate room background noise
     - **10-band parametric EQ** — Peaking biquad filter pipeline per channel
     - **Dynamic range compressor** — Threshold, ratio, attack, release, and makeup gain
-    - **Mic test / monitor toggle** — Real-time loopback to headphones for audio tuning without echo
+    - **Mic monitor** — Real-time loopback to headphones for microphone tuning
 - **Spatial audio & volume boost** — Stereo widening and soft-clipped gain amplification on output channels
-- **Lock-free real-time DSP** — Zero-allocation, wait-free ring buffers on high-priority audio threads
-- **Resilient recovery supervisor** — Auto-recovery loop with backoff and automatic sound server fallback (`pulse`/`pipewire`) on hardware disconnects
-- **Real-time telemetry** — High-frequency peak/RMS volume metering and latency statistics streamed via gRPC
+- **Lock-free audio engine** — Wait-free ring buffers and zero-allocation DSP loop on dedicated real-time threads
+- **Device recovery supervisor** — Background monitoring loop with exponential backoff that automatically rebinds audio streams on device disconnects or hotplugging
+- **Real-time telemetry** — Peak and RMS volume metering per channel streamed over gRPC
 - **Persistent configuration** — Routes, EQ profiles, and dynamics stored locally in `~/.config/routune/config.json`
-- **Global shortcuts** — System-wide hotkeys for mute toggles and noise cancellation
-- **Desktop integration & autostart** — Systemd user unit, desktop launcher, tray indicator, and one-line universal installer
+- **Global shortcuts** — System-wide mute toggle hotkeys with automatic Hyprland config binding
+- **Desktop integration** — Systemd user service, desktop entry, tray indicator, and one-line universal installer
 
 ---
 
@@ -118,7 +118,7 @@ sudo pacman -S --needed \
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/mafly/routune.git
+git clone https://github.com/Nekoplii/Routune.git
 cd routune
 ```
 
@@ -138,13 +138,19 @@ npm install
 npm run tauri dev        # development with hot-reload
 ```
 
-Build a production GUI bundle (`.deb`, `.rpm`, `.AppImage`):
+Build a production bundle (`.deb`, `.rpm`, `.AppImage`):
 
 ```bash
 npm run tauri build
 ```
 
-Bundle output: `routune-gui/src-tauri/target/release/bundle/`
+Bundle output: `target/release/bundle/`
+
+To package a standalone release archive (`routune-<version>-linux-x86_64.tar.gz`):
+
+```bash
+./scripts/package.sh 1.0.0
+```
 
 ### 4. Run workspace tests
 
@@ -173,19 +179,22 @@ curl -fsSL https://raw.githubusercontent.com/Nekoplii/Routune/main/install.sh | 
 To uninstall at any time:
 
 ```bash
-./install.sh --uninstall
+curl -fsSL https://raw.githubusercontent.com/Nekoplii/Routune/main/install.sh | bash -s -- --uninstall
+# Or locally: ./install.sh --uninstall
 ```
 
 ### Option B — Pre-built packages
 
-Download the latest release assets from the [Releases](../../releases) page:
+Download the latest release assets from [GitHub Releases](https://github.com/Nekoplii/Routune/releases):
 
-| Package              | Format          | Install command                                       |
-| -------------------- | --------------- | ----------------------------------------------------- |
-| `routune_*.deb`      | Debian/Ubuntu   | `sudo dpkg -i routune_*.deb`                          |
-| `routune-*.rpm`      | Fedora/RHEL     | `sudo rpm -i routune-*.rpm`                           |
-| `routune_*.AppImage` | Universal Linux | `chmod +x routune_*.AppImage && ./routune_*.AppImage` |
-| `routune-daemon`     | Raw binary      | Copy to `/usr/local/bin/`                             |
+| Package | Distro / System | Installation |
+| ------- | --------------- | ------------ |
+| `routune-<version>-linux-x86_64.AppImage` | Universal Linux (Arch, Fedora, Ubuntu, SteamOS) | `chmod +x routune-*.AppImage && ./routune-*.AppImage` |
+| `routune-<version>-linux-x86_64.deb` | Debian, Ubuntu, Linux Mint | `sudo apt install ./routune-*.deb` |
+| `routune-<version>-linux-x86_64.rpm` | Fedora, RHEL, openSUSE | `sudo dnf install ./routune-*.rpm` |
+| `routune-<version>-linux-x86_64.tar.gz` | Any Linux distribution | `tar -xzf routune-*.tar.gz && cd routune-* && ./install.sh` |
+
+> Every release package bundles the full Routune application (`routune-daemon` audio engine, `routune-gui` control client, systemd service, desktop launcher, and icons).
 
 ---
 
