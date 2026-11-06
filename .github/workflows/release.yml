@@ -3,107 +3,74 @@ name: Release
 on:
   push:
     tags:
+      - 'v*.*.*'
       - 'v*'
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
-  release:
-    name: Build & Release (Linux x86_64)
+  build-linux:
+    name: Build & Package (Linux x86_64)
     runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Extract Release Version
-        id: get_version
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
-          echo "TAG_VERSION=$VERSION" >> $GITHUB_ENV
-          echo "VITE_APP_VERSION=$VERSION" >> $GITHUB_ENV
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: 'npm'
-          cache-dependency-path: routune-gui/package-lock.json
-
-      - name: Inject Release Version
-        run: |
-          VERSION="${{ steps.get_version.outputs.VERSION }}"
-          echo "Injecting version $VERSION into workspace..."
-
-          # Update workspace Cargo.toml
-          sed -i -E "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml
-
-          # Update routune-gui package.json
-          npm --prefix routune-gui version "$VERSION" --no-git-tag-version --allow-same-version
-
-          # Update tauri.conf.json
-          node -e "
-            const fs = require('fs');
-            const file = 'routune-gui/src-tauri/tauri.conf.json';
-            const json = JSON.parse(fs.readFileSync(file, 'utf8'));
-            json.version = '$VERSION';
-            fs.writeFileSync(file, JSON.stringify(json, null, 2) + '\n');
-          "
-
-      - name: Install System Dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            build-essential \
-            curl \
-            wget \
-            file \
-            libssl-dev \
-            libgtk-3-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            libasound2-dev \
-            libpipewire-0.3-dev \
-            libclang-dev \
-            protobuf-compiler \
-            rpm \
-            squashfs-tools
+          node-version: 22
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
-
-      - name: Setup Rust Cache
-        uses: Swatinem/rust-cache@v2
-
-      - name: Build routune-daemon
-        run: cargo build --release -p routune-daemon
-
-      - name: Install GUI Dependencies
-        working-directory: routune-gui
-        run: npm install
-
-      - name: Build GUI & Create GitHub Release
-        id: tauri_build
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          projectPath: routune-gui
-          tagName: ${{ github.ref_name }}
-          releaseName: "Routune ${{ github.ref_name }}"
-          releaseBody: "Release ${{ github.ref_name }} for Routune Audio Routing & DSP."
-          releaseDraft: false
-          prerelease: false
-          args: --bundles deb,rpm,appimage
+          targets: x86_64-unknown-linux-gnu
 
-      - name: Upload Daemon & Systemd Service to Release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install system dependencies
         run: |
-          gh release upload "${{ github.ref_name }}" \
-            target/release/routune-daemon \
-            packaging/routune.service \
-            --clobber
+          sudo apt-get update
+          sudo apt-get install -y \
+            libpipewire-0.3-dev \
+            libspa-0.2-dev \
+            libasound2-dev \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            protobuf-compiler
+
+      - name: Run workspace unit tests
+        run: cargo test --workspace
+
+      - name: Build and package release archive
+        run: ./scripts/package.sh
+
+      - name: Build Tauri native bundles (.deb, .rpm, .AppImage)
+        run: |
+          cd routune-gui
+          npx tauri build || true
+
+      - name: Collect release artifacts
+        run: |
+          mkdir -p release-artifacts
+          cp dist/routune-linux-x86_64.tar.gz release-artifacts/
+          cp dist/routune-linux-x86_64.tar.gz.sha256 release-artifacts/
+          cp install.sh release-artifacts/
+          
+          # Collect Tauri native bundles if generated
+          find target/release/bundle -type f \( -name "*.deb" -o -name "*.rpm" -o -name "*.AppImage" \) -exec cp {} release-artifacts/ \; 2>/dev/null || true
+
+          cd release-artifacts
+          sha256sum * > SHA256SUMS
+          ls -lh
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+        with:
+          files: release-artifacts/*
+          generate_release_notes: true
+          draft: false
+          prerelease: false

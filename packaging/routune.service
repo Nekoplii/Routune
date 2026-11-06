@@ -1,47 +1,20 @@
-# ==============================================================================
-# Routune Audio Daemon - User Systemd Service
-# ==============================================================================
-# Description:
-#   Runs routune-daemon as an unprivileged user-level background service.
-#   Integrates directly with the user's PipeWire session and audio graph.
-#
-# Installation Instructions:
-#   1. Copy this file into your user systemd service directory:
-#      mkdir -p ~/.config/systemd/user
-#      cp packaging/routune.service ~/.config/systemd/user/
-#
-#   2. Reload the user systemd daemon:
-#      systemctl --user daemon-reload
-#
-#   3. Enable and start the service immediately:
-#      systemctl --user enable --now routune.service
-#
-#   4. Verify status and monitor logs:
-#      systemctl --user status routune.service
-#      journalctl --user -u routune.service -f
-# ==============================================================================
-
 [Unit]
-Description=Routune Audio Routing and DSP Daemon
-Documentation=https://github.com/routune/routune
-After=pipewire.service pipewire-pulse.service sound.target
-PartOf=pipewire.service
-Requires=pipewire.service
+Description=Routune Audio Routing Daemon
+Documentation=https://github.com/mafly/routune
+After=pipewire.service pipewire-pulse.service
+Wants=pipewire.service
+PartOf=graphical-session.target
 
 [Service]
 Type=simple
-# Binary resolution: searches PATH or falls back to standard user / system locations
-ExecStart=/usr/bin/routune-daemon
-Restart=always
-RestartSec=3
-
-# Real-time audio thread priority limits and lock-free memory locking
+ExecStart=%h/.local/bin/routune-daemon
+Restart=on-failure
+RestartSec=2
 LimitRTPRIO=95
+LimitRTTIME=infinity
 LimitMEMLOCK=infinity
-LimitNICE=-19
-
-# Preserve audio / session environment variables
-PassEnvironment=XDG_RUNTIME_DIR PIPEWIRE_RUNTIME_DIR WAYLAND_DISPLAY DISPLAY
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=default.target

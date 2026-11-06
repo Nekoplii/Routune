@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Routune
+GenericName=Audio Routing & Mixer
+Comment=Modern Audio Routing & Mixer Engine for Linux
+Exec=routune-gui %u
+Icon=routune
+Terminal=false
+Type=Application
+Categories=AudioVideo;Audio;Mixer;
+StartupWMClass=routune-gui
+Keywords=audio;pipewire;mixer;routing;sound;equalizer;

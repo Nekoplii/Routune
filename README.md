@@ -135,7 +135,25 @@ cargo test --workspace
 
 ## Installation
 
-### Option A — Pre-built packages (recommended)
+### One-Line Quick Install (Recommended)
+
+Install Routune daemon, GUI, systemd background service, desktop launcher, and icons:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/mafly/routune/main/install.sh | bash
+```
+
+Or install system-wide (requires sudo):
+```bash
+curl -fsSL https://raw.githubusercontent.com/mafly/routune/main/install.sh | bash -s -- --system
+```
+
+To uninstall at any time:
+```bash
+./install.sh --uninstall
+```
+
+### Option B — Pre-built packages
 
 Download the latest release assets from the [Releases](../../releases) page:
 
