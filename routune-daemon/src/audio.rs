@@ -411,7 +411,7 @@ impl NativeVirtualMic {
             use std::io::Write;
             writeln!(
                 stdin,
-                "create-node adapter {{ factory.name=support.null-audio-sink node.name=\"routune-virtual-mic\" node.description=\"Routune Mic\" media.class=Audio/Duplex audio.position=[FL FR] }}"
+                "create-node adapter {{ factory.name=support.null-audio-sink node.name=\"routune-virtual-mic\" node.description=\"Routune Mic\" media.class=Audio/Source/Virtual audio.position=[FL FR] }}"
             )?;
             stdin.flush()?;
         }
@@ -426,6 +426,15 @@ impl NativeVirtualMic {
         }
 
         info!("Native PipeWire virtual mic spawned successfully (node_id: {:?})", node_id);
+        if let Some(id) = node_id {
+            let _ = std::process::Command::new("wpctl")
+                .args(["set-default", &id.to_string()])
+                .output();
+        }
+        let _ = std::process::Command::new("pactl")
+            .args(["set-default-source", "routune-virtual-mic"])
+            .output();
+
         Ok(Self {
             child: Some(child),
             node_id,
@@ -540,15 +549,15 @@ pub fn unlink_unwanted_mic_dsp_links() {
 pub fn link_mic_dsp_to_virtual_mic() {
     std::thread::spawn(move || {
         let mut linked = false;
-        for attempt in 1..=30 {
+        for attempt in 1..=60 {
             unlink_unwanted_mic_dsp_links();
             std::thread::sleep(std::time::Duration::from_millis(100));
 
             let res_l = std::process::Command::new("pw-link")
-                .args(["routune-mic-dsp-out:output_FL", "routune-virtual-mic:playback_FL"])
+                .args(["routune-mic-dsp-out:output_FL", "routune-virtual-mic:input_FL"])
                 .output();
             let res_r = std::process::Command::new("pw-link")
-                .args(["routune-mic-dsp-out:output_FR", "routune-virtual-mic:playback_FR"])
+                .args(["routune-mic-dsp-out:output_FR", "routune-virtual-mic:input_FR"])
                 .output();
 
             let l_ok = res_l.as_ref().map_or(false, |o| {
@@ -564,10 +573,10 @@ pub fn link_mic_dsp_to_virtual_mic() {
                 break;
             } else {
                 let fb_l = std::process::Command::new("pw-link")
-                    .args(["routune-mic-dsp-out:output_FL", "routune-virtual-mic:input_FL"])
+                    .args(["routune-mic-dsp-out:output_FL", "routune-virtual-mic:playback_FL"])
                     .output();
                 let fb_r = std::process::Command::new("pw-link")
-                    .args(["routune-mic-dsp-out:output_FR", "routune-virtual-mic:input_FR"])
+                    .args(["routune-mic-dsp-out:output_FR", "routune-virtual-mic:playback_FR"])
                     .output();
                 let fb_l_ok = fb_l.as_ref().map_or(false, |o| {
                     o.status.success() || String::from_utf8_lossy(&o.stderr).contains("File exists")
@@ -576,7 +585,7 @@ pub fn link_mic_dsp_to_virtual_mic() {
                     o.status.success() || String::from_utf8_lossy(&o.stderr).contains("File exists")
                 });
                 if fb_l_ok && fb_r_ok {
-                    info!("Successfully linked routune-mic-dsp-out -> routune-virtual-mic (input_FL/FR fallback) on attempt {attempt}");
+                    info!("Successfully linked routune-mic-dsp-out -> routune-virtual-mic (playback_FL/FR fallback) on attempt {attempt}");
                     linked = true;
                     break;
                 }
@@ -584,14 +593,19 @@ pub fn link_mic_dsp_to_virtual_mic() {
         }
 
         if !linked {
-            warn!("Failed to auto-link routune-mic-dsp-out to routune-virtual-mic after 30 attempts");
-            return;
+            warn!("routune-mic-dsp-out not immediately available; supervisor loop will retry periodically");
         }
 
-        // Clean up any unwanted default-sink autoconnect links created by PipeWire / WirePlumber
-        for _ in 0..15 {
+        // Supervisor loop: periodically ensure mic DSP is linked and unwanted autoconnects purged
+        loop {
+            std::thread::sleep(std::time::Duration::from_secs(2));
             unlink_unwanted_mic_dsp_links();
-            std::thread::sleep(std::time::Duration::from_millis(100));
+            let _ = std::process::Command::new("pw-link")
+                .args(["routune-mic-dsp-out:output_FL", "routune-virtual-mic:input_FL"])
+                .output();
+            let _ = std::process::Command::new("pw-link")
+                .args(["routune-mic-dsp-out:output_FR", "routune-virtual-mic:input_FR"])
+                .output();
         }
     });
 }
@@ -707,8 +721,9 @@ impl ChannelRouter {
         unsafe {
             std::env::set_var(
                 "PIPEWIRE_PROPS",
-                "node.name=routune-mic-dsp-out media.class=Stream/Output/Audio target.object=routune-virtual-mic",
+                "node.name=routune-mic-dsp-out node.autoconnect=false media.class=Stream/Output/Audio",
             );
+            std::env::set_var("PIPEWIRE_AUTOCONNECT", "false");
             std::env::set_var("PIPEWIRE_NODE", "routune-virtual-mic");
         }
 
@@ -819,7 +834,18 @@ impl ChannelRouter {
         use std::collections::HashMap;
         let mut dedup_map: HashMap<String, (proto::OutputDeviceInfo, i32)> = HashMap::new();
 
-        let devices: Vec<cpal::Device> = self.host.input_devices().map(|d| d.collect()).unwrap_or_default();
+        let mut devices: Vec<cpal::Device> = self.host.input_devices().map(|d| d.collect()).unwrap_or_default();
+        if let Ok(all_devs) = self.host.devices() {
+            for dev in all_devs {
+                if !devices.iter().any(|existing| existing.name().ok() == dev.name().ok()) {
+                    if dev.default_input_config().is_ok()
+                        || dev.supported_input_configs().map(|mut it| it.next().is_some()).unwrap_or(false)
+                    {
+                        devices.push(dev);
+                    }
+                }
+            }
+        }
         for dev in devices {
             if let Ok(name) = dev.name() {
                 if is_rejected_device_name(&name) {
@@ -1179,7 +1205,14 @@ impl ChannelRouter {
 
         let q_trimmed = query.trim();
         let q_lower = q_trimmed.to_lowercase();
-        let devices: Vec<cpal::Device> = self.host.input_devices().map(|d| d.collect()).unwrap_or_default();
+        let mut devices: Vec<cpal::Device> = self.host.input_devices().map(|d| d.collect()).unwrap_or_default();
+        if let Ok(all_devs) = self.host.devices() {
+            for dev in all_devs {
+                if !devices.iter().any(|existing| existing.name().ok() == dev.name().ok()) {
+                    devices.push(dev);
+                }
+            }
+        }
 
         // 1. Direct exact match on raw ID / name across host input devices
         for dev in &devices {
@@ -1239,26 +1272,6 @@ impl ChannelRouter {
                     continue;
                 }
                 if name.to_lowercase().contains(&q_lower) {
-                    return Some(dev.clone());
-                }
-            }
-        }
-
-        // 5. Fallback: semantic keyword matching (ryzen / generic_1 / alc / usb)
-        for dev in &devices {
-            if let Ok(name) = dev.name() {
-                if is_rejected_device_name(&name) {
-                    continue;
-                }
-                let n_lower = name.to_lowercase();
-                if (q_lower.contains("ryzen") || q_lower.contains("generic_1") || q_lower.contains("alc"))
-                    && (n_lower.contains("generic_1") || n_lower.contains("alc") || n_lower.contains("generic"))
-                {
-                    return Some(dev.clone());
-                }
-                if (q_lower.contains("usb") || q_lower.contains("device"))
-                    && (n_lower.contains("device") || n_lower.contains("usb"))
-                {
                     return Some(dev.clone());
                 }
             }
@@ -1750,7 +1763,7 @@ fn format_device_display_name_internal(name: &str, is_input: bool) -> String {
         return "PulseAudio Server".to_string();
     }
 
-    // ALSA CARD parameter extraction (e.g. "sysdefault:CARD=Device", "front:CARD=Generic_1,DEV=0")
+    // ALSA CARD parameter extraction (e.g. "sysdefault:CARD=Audio", "front:CARD=DAC,DEV=0")
     if let Some(card_idx) = lower.find("card=") {
         let after_card = &name[card_idx + 5..];
         let card_raw = after_card.split(',').next().unwrap_or(after_card).trim();
@@ -1856,20 +1869,19 @@ pub fn score_physical_output_device(name: &str) -> i32 {
         return -1000;
     }
 
+    let disp = format_device_display_name(name).to_lowercase();
+
     let mut score = 0;
-    if lower.contains("usb") || lower.contains("device") {
+    if lower.contains("usb") || disp.contains("usb") {
         score += 25;
     }
     if lower.contains("card=") {
         score += 15;
     }
-    if lower.contains("pci") {
-        score += 10;
-    }
-    if lower.contains("analog") || lower.contains("generic_1") || lower.contains("ryzen") {
+    if lower.contains("pci") || lower.contains("analog") || lower.contains("hda") {
         score += 20;
     }
-    if lower.contains("speaker") || lower.contains("headphone") || lower.contains("headset") {
+    if lower.contains("speaker") || lower.contains("headphone") || lower.contains("headset") || disp.contains("headset") || disp.contains("headphone") {
         score += 15;
     }
     if lower.contains("sysdefault:") {
@@ -1904,14 +1916,7 @@ pub fn find_physical_output_device(host: &cpal::Host, keyword: &str) -> Option<c
             let display = format_device_display_name(&name).to_lowercase();
             let matches = name_lower.contains(&target_kw)
                 || display.contains(&target_kw)
-                || target_kw.contains(&display)
-                || (target_kw.contains("ryzen")
-                    && (name_lower.contains("generic_1")
-                        || name_lower.contains("generic")
-                        || name_lower.contains("pci")))
-                || (target_kw.contains("usb")
-                    && (name_lower.contains("device")
-                        || name_lower.contains("usb")));
+                || target_kw.contains(&display);
 
             if matches {
                 return Some(dev);
@@ -2430,11 +2435,10 @@ mod tests {
             return;
         }
 
-        // Verify Ryzen HD Audio is properly formatted and selectable if present
-        if inputs.iter().any(|i| i.display_name.contains("Ryzen")) {
-            let res = router.set_channel_routing(5, "Ryzen");
-            assert!(res.is_ok(), "Setting mic routing to 'Ryzen' should succeed: {:?}", res);
-        }
+        // Test routing the first detected hardware input
+        let first_id = &inputs[0].id;
+        let res = router.set_channel_routing(5, first_id);
+        assert!(res.is_ok(), "Setting mic routing to first input should succeed: {:?}", res);
     }
 
     #[test]
@@ -2445,48 +2449,50 @@ mod tests {
         assert!(is_rejected_device_name("Null Output"));
         assert!(is_rejected_device_name("Dummy Output"));
         assert!(is_rejected_device_name("ALSA Loopback Device"));
-        assert!(is_rejected_device_name("surround40:CARD=Generic_1,DEV=0"));
-        assert!(is_rejected_device_name("surround51:CARD=Device,DEV=0"));
-        assert!(is_rejected_device_name("iec958:CARD=Device,DEV=0"));
-        assert!(is_rejected_device_name("hdmi:CARD=NVidia,DEV=0"));
-        assert!(is_rejected_device_name("hdmi:CARD=Generic,DEV=1"));
-        assert!(is_rejected_device_name("spdif:CARD=Generic_1,DEV=0"));
+        assert!(is_rejected_device_name("surround40:CARD=MockCard,DEV=0"));
+        assert!(is_rejected_device_name("surround51:CARD=MockCard,DEV=0"));
+        assert!(is_rejected_device_name("iec958:CARD=MockCard,DEV=0"));
+        assert!(is_rejected_device_name("hdmi:CARD=MockGPU,DEV=0"));
+        assert!(is_rejected_device_name("spdif:CARD=MockCard,DEV=0"));
 
-        assert!(!is_rejected_device_name("sysdefault:CARD=Device"));
-        assert!(!is_rejected_device_name("front:CARD=Generic_1,DEV=0"));
+        assert!(!is_rejected_device_name("sysdefault:CARD=MockCard"));
+        assert!(!is_rejected_device_name("front:CARD=MockCard,DEV=0"));
         assert!(!is_rejected_device_name("USB Audio DAC"));
-        assert!(!is_rejected_device_name("Speakers (Realtek Audio)"));
-        assert!(!is_rejected_device_name("Ryzen HD Audio"));
+        assert!(!is_rejected_device_name("Speakers (High Definition Audio)"));
+        assert!(!is_rejected_device_name("Headphones (Analog Output)"));
     }
 
     #[test]
     fn test_format_display_name_beautification() {
-        register_pipewire_device_description("Device", "USB Audio Device");
-        register_pipewire_device_description("Generic_1", "Ryzen HD Audio Controller");
+        register_pipewire_device_description("MockUSB", "Studio USB DAC");
+        register_pipewire_device_description("MockPCIe", "HD Audio Controller");
 
-        assert_eq!(format_device_display_name("sysdefault:CARD=Device"), "USB Audio Device");
-        assert_eq!(format_device_display_name("front:CARD=Device,DEV=0"), "USB Audio Device");
-        assert_eq!(format_device_display_name("sysdefault:CARD=Generic_1"), "Ryzen HD Audio Controller");
-        assert_eq!(format_device_display_name("front:CARD=Generic_1,DEV=0"), "Ryzen HD Audio Controller");
+        assert_eq!(format_device_display_name("sysdefault:CARD=MockUSB"), "Studio USB DAC");
+        assert_eq!(format_device_display_name("front:CARD=MockUSB,DEV=0"), "Studio USB DAC");
+        assert_eq!(format_device_display_name("sysdefault:CARD=MockPCIe"), "HD Audio Controller");
+        assert_eq!(format_device_display_name("front:CARD=MockPCIe,DEV=0"), "HD Audio Controller");
         assert_eq!(format_device_display_name("pipewire"), "PipeWire Default Output");
         assert_eq!(format_device_display_name("default"), "System Default");
 
-        assert_eq!(format_input_device_display_name("sysdefault:CARD=Generic_1"), "Ryzen HD Audio Controller");
-        assert_eq!(format_input_device_display_name("front:CARD=Generic_1,DEV=0"), "Ryzen HD Audio Controller");
+        assert_eq!(format_input_device_display_name("sysdefault:CARD=MockPCIe"), "HD Audio Controller");
+        assert_eq!(format_input_device_display_name("front:CARD=MockPCIe,DEV=0"), "HD Audio Controller");
         assert_eq!(format_input_device_display_name("pipewire"), "PipeWire Default Input");
+
+        // Fallback for un-cached raw card name: replaces underscores with spaces
+        assert_eq!(format_device_display_name("sysdefault:CARD=Uncached_Card"), "Uncached Card");
     }
 
     #[test]
     fn test_extract_card_name() {
-        assert_eq!(extract_card_name("sysdefault:CARD=Device"), Some("Device".to_string()));
-        assert_eq!(extract_card_name("front:CARD=Generic_1,DEV=0"), Some("Generic_1".to_string()));
+        assert_eq!(extract_card_name("sysdefault:CARD=MockCard"), Some("MockCard".to_string()));
+        assert_eq!(extract_card_name("front:CARD=Other_Card,DEV=0"), Some("Other_Card".to_string()));
         assert_eq!(extract_card_name("hw:CARD=Audio,DEV=1"), Some("Audio".to_string()));
         assert_eq!(extract_card_name("pipewire"), None);
         assert_eq!(extract_card_name("default"), None);
     }
 
     #[test]
-    fn test_hardware_outputs_deduplication_and_usb_presence() {
+    fn test_hardware_outputs_deduplication_and_filtering() {
         let (router, _) = ChannelRouter::new();
         let outputs = router.get_hardware_outputs();
 
@@ -2501,11 +2507,6 @@ mod tests {
         for out in &outputs {
             assert!(seen.insert(out.display_name.clone()), "Duplicate display name found: {}", out.display_name);
         }
-
-        // Verify USB device is captured and sysdefault preferred
-        if let Some(usb) = outputs.iter().find(|o| o.display_name == "USB Audio Device") {
-            assert_eq!(usb.id, "sysdefault:CARD=Device");
-        }
     }
 
     #[test]
@@ -2518,25 +2519,11 @@ mod tests {
         assert_eq!(unassign_res, "Unassigned");
         assert!(router.routes.get(&1).unwrap().target_device.is_none());
 
-        // 2. Exact match on raw ID
-        if let Some(dev) = router.find_device("sysdefault:CARD=Device") {
-            assert!(dev.name().unwrap().contains("Device"));
-        }
-
-        // 2b. Fallback match by ALSA CARD parameter
-        if let Some(dev) = router.find_device("front:CARD=Device,DEV=0") {
-            assert!(dev.name().unwrap().contains("Device"));
-        }
-
-        // 3. Fallback match by clean display name
-        if let Some(dev) = router.find_device("USB Audio Device") {
-            assert!(dev.name().unwrap().contains("Device"));
-        }
-
-        // 4. Fallback match by clean display name substring
-        if let Some(dev) = router.find_device("Headphones") {
-            let name = dev.name().unwrap();
-            assert!(name.contains("Generic_1") || name.contains("Generic") || name.contains("ryzen") || name.contains("analog"));
+        // 2. Dynamic matching against whatever hardware exists on host
+        let devices = router.get_hardware_outputs();
+        if let Some(first) = devices.first() {
+            let found = router.find_device(&first.id);
+            assert!(found.is_some());
         }
     }
 
@@ -2549,13 +2536,13 @@ mod tests {
 
         let default_bridge_score = score_physical_output_device("default");
         let pipewire_bridge_score = score_physical_output_device("pipewire");
-        let usb_score = score_physical_output_device("sysdefault:CARD=Device (USB Audio)");
-        let ryzen_score = score_physical_output_device("front:CARD=Generic_1 (Ryzen HD Audio)");
+        let usb_score = score_physical_output_device("sysdefault:CARD=ExternalDAC (USB Audio)");
+        let pci_score = score_physical_output_device("front:CARD=BuiltinAudio,DEV=0 (HD Audio)");
 
         assert!(usb_score > default_bridge_score);
         assert!(usb_score > pipewire_bridge_score);
-        assert!(ryzen_score > default_bridge_score);
-        assert!(ryzen_score > pipewire_bridge_score);
+        assert!(pci_score > default_bridge_score);
+        assert!(pci_score > pipewire_bridge_score);
     }
 
     #[test]

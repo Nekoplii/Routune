@@ -75,6 +75,24 @@ async fn main() -> Result<()> {
             }
         }
     }
+
+    // Auto-bind primary hardware input for Mic if persisted route failed or unconfigured
+    let mic_is_bound = channel_router.get_channel_target(server::proto::AudioChannel::Mic as i32).is_some();
+    let initial_mic_route = initial_config.get_route(VirtualChannel::Mic);
+    if !mic_is_bound && !initial_mic_route.eq_ignore_ascii_case("none") && !initial_mic_route.eq_ignore_ascii_case("unassigned") {
+        let inputs = channel_router.get_hardware_inputs();
+        if let Some(first_input) = inputs.first() {
+            match channel_router.set_channel_routing(server::proto::AudioChannel::Mic as i32, &first_input.id) {
+                Ok(act) => {
+                    info!("Auto-assigned available hardware input for Mic -> {act}");
+                }
+                Err(e) => {
+                    warn!("Failed to auto-assign hardware input for Mic: {e}");
+                }
+            }
+        }
+    }
+
     let channel_router = Arc::new(tokio::sync::Mutex::new(channel_router));
 
     // 4. Build PipeWire virtual audio routing and inject preloaded EqNodes

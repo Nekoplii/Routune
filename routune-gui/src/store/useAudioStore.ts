@@ -122,32 +122,9 @@ interface AudioStoreState {
 const DEFAULT_EQ_BANDS = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 const GAME_EQ_BANDS = [-4, 10, 1, 0, 0, 0, 0, 0, 0, 0];
 
-const DEFAULT_HARDWARE_OUTPUTS: OutputDeviceInfo[] = [
-  {
-    id: "alsa_output.usb-headset",
-    name: "alsa_output.usb-headset",
-    displayName: "USB Headset",
-    channels: 2,
-    sampleRate: 48000,
-  },
-  {
-    id: "alsa_output.pci-builtin",
-    name: "alsa_output.pci-builtin",
-    displayName: "Speakers (Built-in Audio)",
-    channels: 2,
-    sampleRate: 48000,
-  },
-];
+const DEFAULT_HARDWARE_OUTPUTS: OutputDeviceInfo[] = [];
 
-const DEFAULT_HARDWARE_INPUTS: OutputDeviceInfo[] = [
-  {
-    id: "sysdefault:CARD=Generic_1",
-    name: "sysdefault:CARD=Generic_1",
-    displayName: "Ryzen HD Audio",
-    channels: 2,
-    sampleRate: 48000,
-  },
-];
+const DEFAULT_HARDWARE_INPUTS: OutputDeviceInfo[] = [];
 
 const INITIAL_APPS: AppStream[] = [
   {
