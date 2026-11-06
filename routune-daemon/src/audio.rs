@@ -707,11 +707,12 @@ impl ChannelRouter {
         #[cfg(target_os = "linux")]
         let _silence = StderrSilencer::new();
 
-        let device = self.find_device("default")
+        let device = self.find_device("pulse")
+            .or_else(|| self.find_device("default"))
             .or_else(|| self.host.default_output_device())
             .or_else(|| {
                 self.host.output_devices().ok()?.find(|d| {
-                    d.name().map_or(false, |n| n == "default" || n == "pipewire")
+                    d.name().map_or(false, |n| n == "pulse" || n == "default" || n == "pipewire")
                 })
             })
             .context("No suitable output device for mic DSP output stream")?;
@@ -724,7 +725,6 @@ impl ChannelRouter {
                 "node.name=routune-mic-dsp-out node.autoconnect=false media.class=Stream/Output/Audio",
             );
             std::env::set_var("PIPEWIRE_AUTOCONNECT", "false");
-            std::env::set_var("PIPEWIRE_NODE", "routune-virtual-mic");
         }
 
         let is_active = Arc::new(AtomicBool::new(false));
