@@ -6,14 +6,21 @@ Audio routing and DSP daemon for Linux. The daemon manages all hardware I/O and 
 
 ## Features
 
-- **Virtual audio routing** — PipeWire node graph with per-application channel assignment
-- **10-band parametric EQ** — biquad filter pipeline, lock-free DSP on real-time threads
-- **Noise suppression** — RNNoise via `nnnoiseless` on the microphone channel
-- **Spatial audio** — stereo widening on output channels
-- **Real-time telemetry** — peak/RMS metering and latency counters streamed to GUI
-- **Persistent configuration** — EQ profiles and settings stored locally, exportable as JSON
-- **Global shortcuts** — system-wide hotkeys for mute and noise toggle
-- **Autostart** — daemon launch on desktop session login via systemd user unit
+- **Virtual audio routing** — PipeWire node graph with per-application channel assignment (Game, Chat, Media, Aux, Mic)
+- **Virtual microphone pipeline** — Dedicated native PipeWire virtual source (`routune-virtual-mic`) ready for Discord, OBS, and games with zero feedback loops
+- **Full microphone DSP suite**:
+    - **AI noise suppression** — RNNoise via `nnnoiseless` with real-time attenuation level control
+    - **Noise gate** — Configurable threshold, attack, and release to eliminate background room noise
+    - **10-band parametric EQ** — Peaking biquad filter pipeline per channel
+    - **Dynamic range compressor** — Threshold, ratio, attack, release, and makeup gain
+    - **Mic test / monitor toggle** — Real-time loopback to headphones for audio tuning without echo
+- **Spatial audio & volume boost** — Stereo widening and soft-clipped gain amplification on output channels
+- **Lock-free real-time DSP** — Zero-allocation, wait-free ring buffers on high-priority audio threads
+- **Resilient recovery supervisor** — Auto-recovery loop with backoff and automatic sound server fallback (`pulse`/`pipewire`) on hardware disconnects
+- **Real-time telemetry** — High-frequency peak/RMS volume metering and latency statistics streamed via gRPC
+- **Persistent configuration** — Routes, EQ profiles, and dynamics stored locally in `~/.config/routune/config.json`
+- **Global shortcuts** — System-wide hotkeys for mute toggles and noise cancellation
+- **Desktop integration & autostart** — Systemd user unit, desktop launcher, tray indicator, and one-line universal installer
 
 ---
 
@@ -90,6 +97,20 @@ sudo dnf install -y \
   protobuf-compiler
 ```
 
+Install system dependencies on Arch Linux:
+
+```bash
+sudo pacman -S --needed \
+  webkit2gtk-4.1 \
+  libayatana-appindicator \
+  gtk3 \
+  openssl \
+  alsa-lib \
+  pipewire \
+  clang \
+  protobuf
+```
+
 ---
 
 ## Building from Source
@@ -97,7 +118,7 @@ sudo dnf install -y \
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/routune/routune.git
+git clone https://github.com/mafly/routune.git
 cd routune
 ```
 
@@ -140,15 +161,17 @@ cargo test --workspace
 Install Routune daemon, GUI, systemd background service, desktop launcher, and icons:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/mafly/routune/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Nekoplii/Routune/main/install.sh | bash
 ```
 
 Or install system-wide (requires sudo):
+
 ```bash
-curl -fsSL https://raw.githubusercontent.com/mafly/routune/main/install.sh | bash -s -- --system
+curl -fsSL https://raw.githubusercontent.com/Nekoplii/Routune/main/install.sh | bash -s -- --system
 ```
 
 To uninstall at any time:
+
 ```bash
 ./install.sh --uninstall
 ```
@@ -164,43 +187,20 @@ Download the latest release assets from the [Releases](../../releases) page:
 | `routune_*.AppImage` | Universal Linux | `chmod +x routune_*.AppImage && ./routune_*.AppImage` |
 | `routune-daemon`     | Raw binary      | Copy to `/usr/local/bin/`                             |
 
-### Option B — Systemd user service (daemon only, headless)
-
-Run the daemon as a background user service that starts with your desktop session:
-
-```bash
-# 1. Copy the daemon binary
-sudo cp target/release/routune-daemon /usr/bin/routune-daemon
-
-# 2. Install the service unit
-mkdir -p ~/.config/systemd/user
-cp packaging/routune.service ~/.config/systemd/user/
-
-# 3. Enable and start
-systemctl --user daemon-reload
-systemctl --user enable --now routune.service
-
-# 4. Verify
-systemctl --user status routune.service
-journalctl --user -u routune.service -f
-```
-
-The daemon listens on `127.0.0.1:50051`. Launch `routune-gui` at any time to connect to it.
-
 ---
 
 ## Tech Stack
 
-| Layer            | Technology                                       |
-| ---------------- | ------------------------------------------------ |
-| Audio I/O        | `cpal`                                           |
-| Audio graph      | PipeWire (Linux)                                 |
-| DSP filters      | `biquad`, `rubato`, `nnnoiseless`                |
-| Lock-free queues | `rtrb`, `ringbuf`                                |
-| Async runtime    | `tokio`                                          |
-| IPC protocol     | gRPC (`tonic`, `protobuf-ts`)                    |
-| GUI shell        | Tauri v2                                         |
-| Frontend         | React 18, TypeScript, Vite, TailwindCSS, Zustand |
+| Layer            | Technology                                                     |
+| ---------------- | -------------------------------------------------------------- |
+| Audio I/O        | `cpal` (ALSA / Pulse / PipeWire streaming)                     |
+| Audio graph      | PipeWire (`pipewire-rs`, `pw-link`, native virtual mic)        |
+| DSP filters      | `biquad` (EQ), `nnnoiseless` (RNNoise), noise gate, compressor |
+| Lock-free queues | `crossbeam-channel`, atomic `AudioRingBuffer`                  |
+| Async runtime    | `tokio`                                                        |
+| IPC protocol     | gRPC (`tonic`, `prost`, `@protobuf-ts`)                        |
+| GUI shell        | Tauri v2                                                       |
+| Frontend         | React 18, TypeScript, Vite, TailwindCSS, Zustand               |
 
 ---
 
