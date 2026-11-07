@@ -20,5 +20,8 @@ serde.workspace = true
 serde_json.workspace = true
 base64 = "0.22"
 
+[features]
+custom-protocol = ["tauri/custom-protocol"]
+
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"

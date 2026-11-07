@@ -18,7 +18,7 @@ npm --prefix routune-gui ci || npm --prefix routune-gui install
 npm --prefix routune-gui run build
 
 echo "=== Building GUI Binary ==="
-cargo build --release -p routune-gui
+cargo build --release -p routune-gui --features custom-protocol
 
 DIST_DIR="$SCRIPT_DIR/dist"
 STAGE_DIR="$DIST_DIR/routune-${VERSION}-linux-${ARCH}"
