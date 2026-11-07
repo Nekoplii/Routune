@@ -24,7 +24,8 @@
 .eq-slider-vertical::-webkit-slider-runnable-track {
   width: 6px;
   height: 100%;
-  background: #262626;
+  background: #171528;
+  border: 1px solid #2B2942;
   border-radius: 9999px;
 }
 
@@ -38,7 +39,7 @@
   cursor: grab;
   margin-left: -9px;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
-  border: 1px solid rgba(255, 255, 255, 0.25);
+  border: 1px solid rgba(196, 181, 253, 0.4);
   transition: transform 0.1s ease, filter 0.15s ease;
 }
 
@@ -55,7 +56,8 @@
 .eq-slider-vertical::-moz-range-track {
   width: 6px;
   height: 100%;
-  background: #262626;
+  background: #171528;
+  border: 1px solid #2B2942;
   border-radius: 9999px;
 }
 
@@ -65,7 +67,7 @@
   background: currentColor;
   border-radius: 3px;
   cursor: grab;
-  border: 1px solid rgba(255, 255, 255, 0.25);
+  border: 1px solid rgba(196, 181, 253, 0.4);
 }
 
 body {
@@ -73,7 +75,8 @@ body {
   user-select: none;
   overflow: hidden;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Fira Sans", "Droid Sans", "Helvetica Neue", sans-serif;
-  background-color: #131316;
+  background-color: #0F0E17;
+  color: #ECEAFB;
 }
 
 /* Custom Scrollbars */
@@ -85,11 +88,11 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #32323c;
+  background: #2B2942;
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #444452;
+  background: #3F3B5F;
 }
 
 /* Studio Audio Mixer Vertical Fader */
@@ -110,8 +113,8 @@ body {
 .mixer-fader-vertical::-webkit-slider-runnable-track {
   width: 8px;
   height: 100%;
-  background: linear-gradient(180deg, #18181b 0%, #09090b 100%);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: #0F0E17;
+  border: 1px solid #2B2942;
   border-radius: 9999px;
   box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.8);
 }
@@ -121,12 +124,12 @@ body {
   appearance: none;
   width: 36px;
   height: 20px;
-  background: linear-gradient(180deg, #3f3f46 0%, #18181b 50%, #27272a 100%);
+  background: linear-gradient(180deg, #2B2942 0%, #171528 50%, #201D36 100%);
   border-radius: 4px;
   cursor: grab;
   margin-left: -14px;
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.25), inset 0 -1px 0 rgba(0, 0, 0, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(196, 181, 253, 0.3), inset 0 -1px 0 rgba(0, 0, 0, 0.6);
+  border: 1px solid #7C6AF2;
   transition: transform 0.1s ease, filter 0.15s ease;
   position: relative;
 }
@@ -144,16 +147,16 @@ body {
 .mixer-fader-vertical::-moz-range-track {
   width: 8px;
   height: 100%;
-  background: #18181b;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: #0F0E17;
+  border: 1px solid #2B2942;
   border-radius: 9999px;
 }
 
 .mixer-fader-vertical::-moz-range-thumb {
   width: 36px;
   height: 20px;
-  background: #27272a;
+  background: #171528;
   border-radius: 4px;
   cursor: grab;
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  border: 1px solid #7C6AF2;
 }

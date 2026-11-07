@@ -45,10 +45,10 @@ const CHANNEL_CONFIGS: ChannelConfig[] = [
     title: "Game",
     sub: "routune-game",
     icon: Gamepad2,
-    iconBg: "bg-orange-500/15",
-    iconBorder: "border-[#ff5511]/30",
-    iconColor: "text-[#ff5511]",
-    badgeBg: "bg-orange-500/20 text-orange-300 border-2 border-orange-500/40",
+    iconBg: "bg-[#7C6AF2]/15",
+    iconBorder: "border-[#7C6AF2]/30",
+    iconColor: "text-[#7C6AF2]",
+    badgeBg: "bg-[#7C6AF2]/20 text-[#C4B5FD] border-2 border-[#7C6AF2]/40",
   },
   {
     channel: AudioChannel.CHAT,
@@ -78,7 +78,7 @@ const CHANNEL_CONFIGS: ChannelConfig[] = [
     iconBg: "bg-emerald-500/15",
     iconBorder: "border-emerald-500/30",
     iconColor: "text-emerald-400",
-    badgeBg: "bg-zinc-800 text-zinc-300 border-2 border-white/10",
+    badgeBg: "bg-[#0F0E17] text-[#ECEAFB]/70 border-2 border-[#2B2942]",
   },
 ];
 
@@ -108,22 +108,22 @@ function DraggableAppCard({ app, isOverlay = false }: DraggableAppCardProps) {
       {...listeners}
       className={`group flex items-center justify-between rounded-2xl border-2 px-3.5 py-3 select-none cursor-grab active:cursor-grabbing transition-colors ${
         isOverlay
-          ? "border-[#ff5511] bg-[#282832] ring-2 ring-[#ff5511]/40 scale-105 z-50 text-white shadow-xl shadow-black/60"
+          ? "border-[#7C6AF2] bg-[#201D36] ring-2 ring-[#7C6AF2]/40 scale-105 z-50 text-white shadow-xl shadow-black/60"
           : isDragging
-          ? "opacity-25 border-dashed border-zinc-600 bg-[#16161b]"
-          : "border-white/10 bg-[#16161b] hover:border-white/20 hover:bg-[#202028] text-zinc-200"
+          ? "opacity-25 border-dashed border-[#2B2942] bg-[#0F0E17]"
+          : "border-[#2B2942] bg-[#0F0E17] hover:border-[#3F3B5F] hover:bg-[#201D36] text-[#ECEAFB]"
       }`}
     >
       <div className="flex items-center gap-3 min-w-0">
-        <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl overflow-hidden bg-[#22222a] border-2 border-white/10 group-hover:border-white/20 transition-colors p-1">
+        <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl overflow-hidden bg-[#171528] border-2 border-[#2B2942] group-hover:border-[#3F3B5F] transition-colors p-1">
           <AppIcon name={app.name} iconName={app.iconName} className="h-6 w-6" />
         </div>
 
         <div className="flex flex-col min-w-0">
-          <span className="text-xs font-semibold text-white truncate leading-tight">
+          <span className="text-xs font-semibold text-[#ECEAFB] truncate leading-tight">
             {app.name || "Unknown App"}
           </span>
-          <span className="text-[10px] font-mono text-zinc-400 truncate mt-0.5">
+          <span className="text-[10px] font-mono text-[#ECEAFB]/50 truncate mt-0.5">
             node #{app.appId}
           </span>
         </div>
@@ -131,9 +131,9 @@ function DraggableAppCard({ app, isOverlay = false }: DraggableAppCardProps) {
 
       <div className="flex items-center gap-2 pl-2">
         {isRoutingApp ? (
-          <Loader2 className="h-3.5 w-3.5 flex-shrink-0 animate-spin text-[#ff5511]" />
+          <Loader2 className="h-3.5 w-3.5 flex-shrink-0 animate-spin text-[#7C6AF2]" />
         ) : (
-          <GripVertical className="h-3.5 w-3.5 flex-shrink-0 text-zinc-500 group-hover:text-zinc-300 transition-colors" />
+          <GripVertical className="h-3.5 w-3.5 flex-shrink-0 text-[#ECEAFB]/40 group-hover:text-[#ECEAFB]/80 transition-colors" />
         )}
       </div>
     </div>
@@ -166,10 +166,10 @@ function ChannelDropZone({
   return (
     <div
       ref={setNodeRef}
-      className={`flex flex-col justify-between rounded-3xl border-2 bg-[#202026] p-4 min-h-[300px] transition-colors ${
+      className={`flex flex-col justify-between rounded-3xl border-2 bg-[#171528] p-4 min-h-[300px] transition-colors ${
         isOver
-          ? "border-[#ff5511]/70 bg-[#252530] ring-2 ring-[#ff5511]/30 scale-[1.01]"
-          : "border-white/10 hover:border-white/20"
+          ? "border-[#7C6AF2]/80 bg-[#1A172E] ring-2 ring-[#7C6AF2]/30 scale-[1.01]"
+          : "border-[#2B2942] hover:border-[#3F3B5F]"
       }`}
     >
       {/* Card Header */}
@@ -181,16 +181,16 @@ function ChannelDropZone({
             <Icon className="h-4 w-4" />
           </div>
           <div>
-            <h3 className="text-sm font-bold tracking-tight text-white leading-none">
+            <h3 className="text-sm font-bold tracking-tight text-[#ECEAFB] leading-none">
               {config.title}
             </h3>
-            <span className="text-[10px] font-mono text-zinc-400">{config.sub}</span>
+            <span className="text-[10px] font-mono text-[#ECEAFB]/50">{config.sub}</span>
           </div>
         </div>
 
         <div
           className={`flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-mono font-medium ${
-            apps.length > 0 ? config.badgeBg : "bg-zinc-800 text-zinc-400 border-2 border-white/10"
+            apps.length > 0 ? config.badgeBg : "bg-[#0F0E17] text-[#ECEAFB]/50 border-2 border-[#2B2942]"
           }`}
         >
           {apps.length}
@@ -203,12 +203,12 @@ function ChannelDropZone({
           <div
             className={`flex h-full min-h-[130px] flex-col items-center justify-center rounded-2xl border-2 border-dashed text-center p-4 transition-colors ${
               isOver
-                ? "border-[#ff5511]/60 bg-[#ff5511]/10 text-white"
-                : "border-white/10 bg-[#16161b] text-zinc-400"
+                ? "border-[#7C6AF2]/60 bg-[#7C6AF2]/10 text-white"
+                : "border-[#2B2942] bg-[#0F0E17] text-[#ECEAFB]/60"
             }`}
           >
-            <ArrowDown className="h-4 w-4 mb-1 text-zinc-400" />
-            <p className="text-xs font-medium text-zinc-300">Drop an app here</p>
+            <ArrowDown className="h-4 w-4 mb-1 text-[#ECEAFB]/50" />
+            <p className="text-xs font-medium text-[#ECEAFB]/70">Drop an app here</p>
           </div>
         ) : (
           apps.map((app) => <DraggableAppCard key={app.appId} app={app} />)
@@ -222,7 +222,7 @@ function ChannelDropZone({
             value={currentRouting}
             disabled={isUpdatingRouting}
             onChange={(e) => onSelectRouting(e.target.value)}
-            className="w-full appearance-none rounded-xl border-2 border-white/10 bg-[#16161b] py-2.5 pl-3 pr-8 text-xs font-medium text-zinc-200 focus:border-[#ff5511] focus:outline-none cursor-pointer disabled:opacity-50"
+            className="w-full appearance-none rounded-xl border-2 border-[#2B2942] bg-[#0F0E17] py-2.5 pl-3 pr-8 text-xs font-medium text-[#ECEAFB] focus:border-[#7C6AF2] focus:outline-none cursor-pointer disabled:opacity-50"
           >
             <option value="none">No output (muted)</option>
             {hardwareOutputs.map((d) => (
@@ -231,9 +231,9 @@ function ChannelDropZone({
               </option>
             ))}
           </select>
-          <div className="pointer-events-none absolute right-3 flex items-center text-zinc-400">
+          <div className="pointer-events-none absolute right-3 flex items-center text-[#ECEAFB]/50">
             {isUpdatingRouting ? (
-              <Loader2 className="h-3 w-3 animate-spin text-[#ff5511]" />
+              <Loader2 className="h-3 w-3 animate-spin text-[#7C6AF2]" />
             ) : (
               <ChevronDown className="h-3.5 w-3.5" />
             )}
@@ -344,7 +344,7 @@ export function AppRoutingPanel() {
       </div>
 
       {/* Mic Input Card (Physical Capture Hardware -> PipeWire Virtual Source) */}
-      <div className="rounded-3xl border-2 border-white/10 bg-[#202026] p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-3 sm:gap-4">
+      <div className="rounded-3xl border-2 border-[#2B2942] bg-[#171528] p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-3 sm:gap-4">
         {/* Header row on small screens, left side on lg */}
         <div className="flex items-center justify-between lg:justify-start gap-3 min-w-0 w-full lg:w-auto">
           <div className="flex items-center gap-3.5 min-w-0">
@@ -352,7 +352,7 @@ export function AppRoutingPanel() {
               <Mic className="h-5 w-5" />
             </div>
             <div className="flex items-center gap-2.5 min-w-0">
-              <h2 className="text-sm font-bold text-white tracking-tight shrink-0">Mic Input</h2>
+              <h2 className="text-sm font-bold text-[#ECEAFB] tracking-tight shrink-0">Mic Input</h2>
               <span className="rounded-md border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-[10px] font-mono text-rose-300 shrink-0">
                 Audio/Source/Virtual
               </span>
@@ -367,14 +367,14 @@ export function AppRoutingPanel() {
             className={`lg:hidden flex items-center justify-center gap-2 rounded-xl border-2 px-3 py-2 text-xs font-semibold transition-all shrink-0 cursor-pointer ${
               micTestEnabled
                 ? "border-emerald-500/60 bg-emerald-500/20 text-emerald-300 shadow-md shadow-emerald-950/40"
-                : "border-white/10 bg-[#16161b] text-zinc-400 hover:border-white/20 hover:text-zinc-200"
+                : "border-[#2B2942] bg-[#0F0E17] text-[#ECEAFB]/60 hover:border-[#3F3B5F] hover:text-white"
             } disabled:opacity-50`}
             title="Listen to microphone with DSP effects in real time through primary output"
           >
             {isTogglingMicTest ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin text-emerald-400" />
             ) : (
-              <Headphones className={`h-3.5 w-3.5 shrink-0 ${micTestEnabled ? "text-emerald-400" : "text-zinc-400"}`} />
+              <Headphones className={`h-3.5 w-3.5 shrink-0 ${micTestEnabled ? "text-emerald-400" : "text-[#ECEAFB]/60"}`} />
             )}
             <span className="whitespace-nowrap">{micTestEnabled ? "Testing Mic" : "Test Mic"}</span>
           </button>
@@ -389,14 +389,14 @@ export function AppRoutingPanel() {
             className={`hidden lg:flex items-center justify-center gap-2 rounded-xl border-2 px-3.5 py-2.5 text-xs font-semibold transition-all shrink-0 cursor-pointer ${
               micTestEnabled
                 ? "border-emerald-500/60 bg-emerald-500/20 text-emerald-300 shadow-lg shadow-emerald-950/40"
-                : "border-white/10 bg-[#16161b] text-zinc-400 hover:border-white/20 hover:text-zinc-200"
+                : "border-[#2B2942] bg-[#0F0E17] text-[#ECEAFB]/60 hover:border-[#3F3B5F] hover:text-white"
             } disabled:opacity-50`}
             title="Listen to microphone with DSP effects in real time through primary output"
           >
             {isTogglingMicTest ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin text-emerald-400" />
             ) : (
-              <Headphones className={`h-3.5 w-3.5 shrink-0 ${micTestEnabled ? "text-emerald-400" : "text-zinc-400"}`} />
+              <Headphones className={`h-3.5 w-3.5 shrink-0 ${micTestEnabled ? "text-emerald-400" : "text-[#ECEAFB]/60"}`} />
             )}
             <span className="whitespace-nowrap">{micTestEnabled ? "Testing Mic (Active)" : "Test Mic"}</span>
           </button>
@@ -406,7 +406,7 @@ export function AppRoutingPanel() {
               value={channelRoutings[AudioChannel.MIC] || "none"}
               disabled={isRoutingUpdating[AudioChannel.MIC]}
               onChange={(e) => setChannelRouting(AudioChannel.MIC, e.target.value)}
-              className="w-full appearance-none rounded-xl border-2 border-white/10 bg-[#16161b] py-2.5 pl-3 pr-8 text-xs font-medium text-zinc-200 focus:border-[#ff5511] focus:outline-none cursor-pointer disabled:opacity-50 truncate"
+              className="w-full appearance-none rounded-xl border-2 border-[#2B2942] bg-[#0F0E17] py-2.5 pl-3 pr-8 text-xs font-medium text-[#ECEAFB] focus:border-[#7C6AF2] focus:outline-none cursor-pointer disabled:opacity-50 truncate"
             >
               <option value="none">No input (disabled)</option>
               {hardwareInputs.map((d) => (
@@ -415,9 +415,9 @@ export function AppRoutingPanel() {
                 </option>
               ))}
             </select>
-            <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 flex items-center text-zinc-400">
+            <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 flex items-center text-[#ECEAFB]/50">
               {isRoutingUpdating[AudioChannel.MIC] ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin text-[#ff5511]" />
+                <Loader2 className="h-3.5 w-3.5 animate-spin text-[#7C6AF2]" />
               ) : (
                 <ChevronDown className="h-3.5 w-3.5" />
               )}
@@ -449,16 +449,16 @@ export function AppRoutingPanel() {
         {/* Bottom Container: Unassigned streams */}
         <div
           ref={setUnassignedRef}
-          className={`rounded-3xl border-2 bg-[#202026] p-5 flex flex-col gap-4 transition-colors ${
+          className={`rounded-3xl border-2 bg-[#171528] p-5 flex flex-col gap-4 transition-colors ${
             isOverUnassigned
-              ? "border-[#ff5511]/70 bg-[#252530] ring-2 ring-[#ff5511]/30"
-              : "border-white/10"
+              ? "border-[#7C6AF2]/80 bg-[#1A172E] ring-2 ring-[#7C6AF2]/30"
+              : "border-[#2B2942]"
           }`}
         >
           {/* Header Row */}
           <div className="flex items-center justify-between">
             <div className="flex flex-col">
-              <h2 className="text-sm font-bold text-white tracking-tight">
+              <h2 className="text-sm font-bold text-[#ECEAFB] tracking-tight">
                 Unassigned streams
               </h2>
             </div>
@@ -467,9 +467,9 @@ export function AppRoutingPanel() {
               type="button"
               onClick={handleManualRefresh}
               disabled={isManualRefreshing}
-              className="flex items-center gap-2 rounded-xl border-2 border-white/10 bg-[#282830] hover:bg-[#32323c] hover:border-white/20 px-3.5 py-2 text-xs font-medium text-zinc-200 hover:text-white transition-colors cursor-pointer disabled:opacity-50"
+              className="flex items-center gap-2 rounded-xl border-2 border-[#2B2942] bg-[#201D36] hover:bg-[#282444] hover:border-[#3F3B5F] px-3.5 py-2 text-xs font-medium text-[#ECEAFB]/80 hover:text-white transition-colors cursor-pointer disabled:opacity-50"
             >
-              <RotateCw className={`h-3.5 w-3.5 ${isManualRefreshing ? "animate-spin text-[#ff5511]" : ""}`} />
+              <RotateCw className={`h-3.5 w-3.5 ${isManualRefreshing ? "animate-spin text-[#7C6AF2]" : ""}`} />
               <span>Scan apps</span>
             </button>
           </div>

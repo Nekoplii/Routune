@@ -51,8 +51,8 @@ function ToggleSwitch({ checked, onChange, disabled, label }: ToggleSwitchProps)
       onClick={() => onChange(!checked)}
       className={`relative inline-flex h-6 w-11 shrink-0 p-0.5 items-center rounded-full transition-colors duration-200 cursor-pointer border-0 ${
         checked
-          ? "bg-[#ff5511] shadow-[0_0_12px_rgba(255,85,17,0.4)]"
-          : "bg-[#282832] ring-1 ring-white/10 hover:ring-white/20"
+          ? "bg-[#7C6AF2] shadow-[0_0_12px_rgba(124,106,242,0.4)]"
+          : "bg-[#201D36] ring-1 ring-[#2B2942] hover:ring-[#3F3B5F]"
       } ${disabled ? "opacity-40 cursor-not-allowed" : ""}`}
     >
       <span
@@ -79,7 +79,7 @@ function SectionCard({ icon, title, subtitle, children, danger }: SectionCardPro
       className={`flex flex-col rounded-2xl sm:rounded-3xl border-2 p-4 sm:p-6 gap-4 sm:gap-5 ${
         danger
           ? "border-rose-500/30 bg-[#1f1618]"
-          : "border-white/10 bg-[#202026]"
+          : "border-[#2B2942] bg-[#171528]"
       }`}
     >
       {/* Card Header – matches DspTuningView card header pattern */}
@@ -88,16 +88,16 @@ function SectionCard({ icon, title, subtitle, children, danger }: SectionCardPro
           className={`flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-xl border shrink-0 ${
             danger
               ? "bg-rose-500/15 border-rose-500/30 text-rose-400"
-              : "bg-[#ff5511]/15 border-[#ff5511]/30 text-[#ff5511]"
+              : "bg-[#7C6AF2]/15 border-[#7C6AF2]/30 text-[#7C6AF2]"
           }`}
         >
           {icon}
         </div>
         <div className="min-w-0">
-          <h2 className={`text-sm font-bold tracking-tight truncate ${danger ? "text-rose-200" : "text-white"}`}>
+          <h2 className={`text-sm font-bold tracking-tight truncate ${danger ? "text-rose-200" : "text-[#ECEAFB]"}`}>
             {title}
           </h2>
-          <span className="text-[11px] font-mono text-zinc-400 truncate block">{subtitle}</span>
+          <span className="text-[11px] font-mono text-[#ECEAFB]/50 truncate block">{subtitle}</span>
         </div>
       </div>
 
@@ -374,11 +374,11 @@ export function Settings() {
     <div className="flex flex-col gap-4 sm:gap-6 w-full max-w-7xl mx-auto pb-8 select-none">
       {/* Page Title Row – identical style to Tuning / Routing */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-xl font-bold tracking-tight text-white font-sans">Settings</h1>
+        <h1 className="text-xl font-bold tracking-tight text-[#ECEAFB] font-sans">Settings</h1>
 
         {/* Inline feedback badge */}
         {feedbackMsg && (
-          <div className="flex items-center gap-2 rounded-full border border-[#ff5511]/30 bg-[#ff5511]/10 px-3.5 py-1.5 text-xs font-medium text-[#ff5511] font-mono">
+          <div className="flex items-center gap-2 rounded-full border border-[#7C6AF2]/30 bg-[#7C6AF2]/10 px-3.5 py-1.5 text-xs font-medium text-[#C4B5FD] font-mono">
             <Check className="h-3.5 w-3.5 shrink-0" />
             <span>{feedbackMsg}</span>
           </div>
@@ -422,7 +422,7 @@ export function Settings() {
         subtitle="DSP frame buffer latency targets"
       >
         <div className="flex flex-col gap-2">
-          <span className="text-[10px] font-mono uppercase tracking-widest text-zinc-500">
+          <span className="text-[10px] font-mono uppercase tracking-widest text-[#ECEAFB]/50">
             Latency Target
           </span>
 
@@ -437,25 +437,25 @@ export function Settings() {
                   onClick={() => setLatencyMode(opt.id)}
                   className={`flex flex-col items-start rounded-xl sm:rounded-2xl border-2 p-3.5 sm:p-4 text-left transition-all cursor-pointer ${
                     active
-                      ? "border-[#ff5511] bg-[#ff5511]/10 shadow-[0_0_16px_rgba(255,85,17,0.15)]"
-                      : "border-white/10 bg-[#16161b] hover:border-white/20 hover:bg-[#282830]"
+                      ? "border-[#7C6AF2] bg-[#7C6AF2]/10 shadow-[0_0_16px_rgba(124,106,242,0.2)]"
+                      : "border-[#2B2942] bg-[#0F0E17] hover:border-[#3F3B5F] hover:bg-[#201D36]"
                   }`}
                 >
                   <div className="flex flex-wrap items-center justify-between gap-1.5 w-full mb-1.5">
-                    <span className={`text-sm font-semibold ${active ? "text-white" : "text-zinc-200"}`}>
+                    <span className={`text-sm font-semibold ${active ? "text-white" : "text-[#ECEAFB]"}`}>
                       {opt.label}
                     </span>
                     <span
                       className={`text-[10px] font-mono px-2 py-0.5 rounded-full border shrink-0 ${
                         active
-                          ? "border-[#ff5511]/40 bg-[#ff5511]/15 text-[#ff5511]"
-                          : "border-white/10 bg-white/5 text-zinc-400"
+                          ? "border-[#7C6AF2]/40 bg-[#7C6AF2]/15 text-[#C4B5FD]"
+                          : "border-[#2B2942] bg-white/5 text-[#ECEAFB]/60"
                       }`}
                     >
                       {opt.spec}
                     </span>
                   </div>
-                  <span className="text-xs text-zinc-400 leading-relaxed">{opt.desc}</span>
+                  <span className="text-xs text-[#ECEAFB]/60 leading-relaxed">{opt.desc}</span>
                 </button>
               );
             })}
@@ -478,12 +478,12 @@ export function Settings() {
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-4">
                   {/* Icon + labels */}
                   <div className="flex items-center gap-3 min-w-0">
-                    <div className="flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-xl border border-white/10 bg-[#16161b] text-zinc-300 shrink-0">
+                    <div className="flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-xl border border-[#2B2942] bg-[#0F0E17] text-[#ECEAFB]/80 shrink-0">
                       {icon}
                     </div>
                     <div className="flex flex-col min-w-0">
-                      <span className="text-sm font-medium text-white">{label}</span>
-                      <span className="text-[11px] font-mono text-zinc-400 truncate">{sub}</span>
+                      <span className="text-sm font-medium text-[#ECEAFB]">{label}</span>
+                      <span className="text-[11px] font-mono text-[#ECEAFB]/50 truncate">{sub}</span>
                     </div>
                   </div>
 
@@ -494,8 +494,8 @@ export function Settings() {
                       onClick={() => setRecordingKey(isRecording ? null : key)}
                       className={`min-w-28 sm:min-w-32 rounded-xl border-2 px-3 py-1.5 text-xs font-mono font-medium transition-all cursor-pointer ${
                         isRecording
-                          ? "border-[#ff5511] bg-[#ff5511]/15 text-[#ff5511] shadow-[0_0_12px_rgba(255,85,17,0.3)] animate-pulse"
-                          : "border-white/10 bg-[#16161b] text-zinc-200 hover:border-white/20 hover:bg-[#282830]"
+                          ? "border-[#7C6AF2] bg-[#7C6AF2]/15 text-[#C4B5FD] shadow-[0_0_12px_rgba(124,106,242,0.3)] animate-pulse"
+                          : "border-[#2B2942] bg-[#0F0E17] text-[#ECEAFB] hover:border-[#3F3B5F] hover:bg-[#201D36]"
                       }`}
                     >
                       {isRecording ? "Press keys…" : val || "— unbound —"}
@@ -506,7 +506,7 @@ export function Settings() {
                         type="button"
                         title="Clear shortcut"
                         onClick={() => setShortcut(key, "")}
-                        className="flex h-8 w-8 items-center justify-center rounded-xl border-2 border-white/10 bg-[#16161b] hover:bg-[#282830] hover:border-white/20 text-zinc-400 hover:text-zinc-200 transition-all cursor-pointer"
+                        className="flex h-8 w-8 items-center justify-center rounded-xl border-2 border-[#2B2942] bg-[#0F0E17] hover:bg-[#201D36] hover:border-[#3F3B5F] text-[#ECEAFB]/60 hover:text-[#ECEAFB] transition-all cursor-pointer"
                       >
                         <RotateCcw className="h-3.5 w-3.5" />
                       </button>
@@ -515,7 +515,7 @@ export function Settings() {
                 </div>
 
                 {idx < SHORTCUT_ROWS.length - 1 && (
-                  <div className="h-px w-full bg-white/5" />
+                  <div className="h-px w-full bg-[#2B2942]/60" />
                 )}
               </React.Fragment>
             );
@@ -524,12 +524,12 @@ export function Settings() {
 
         {/* Registration status */}
         {shortcutStatus.length > 0 && (
-          <div className="flex flex-col gap-1.5 rounded-xl border border-white/5 bg-[#16161b] px-3.5 py-2.5">
-            <span className="text-[10px] font-mono uppercase tracking-widest text-zinc-500">Registration status</span>
+          <div className="flex flex-col gap-1.5 rounded-xl border border-[#2B2942]/60 bg-[#0F0E17] px-3.5 py-2.5">
+            <span className="text-[10px] font-mono uppercase tracking-widest text-[#ECEAFB]/50">Registration status</span>
             {shortcutStatus.map((s) => (
               <div key={s.key} className="flex items-center gap-2 text-[11px] font-mono">
                 <span className={s.ok ? "text-emerald-400" : "text-rose-400"}>{s.ok ? "✓" : "✗"}</span>
-                <span className="text-zinc-300">{s.accelerator}</span>
+                <span className="text-[#ECEAFB]/80">{s.accelerator}</span>
                 {!s.ok && <span className="text-rose-400 truncate">{s.error}</span>}
               </div>
             ))}
@@ -537,8 +537,8 @@ export function Settings() {
         )}
 
         {/* Info callout */}
-        <div className="flex items-center gap-2.5 rounded-xl sm:rounded-2xl border border-white/5 bg-[#16161b] px-3.5 sm:px-4 py-2.5 text-xs font-mono text-zinc-400">
-          <Info className="h-3.5 w-3.5 shrink-0 text-[#ff5511]" />
+        <div className="flex items-center gap-2.5 rounded-xl sm:rounded-2xl border border-[#2B2942]/60 bg-[#0F0E17] px-3.5 sm:px-4 py-2.5 text-xs font-mono text-[#ECEAFB]/60">
+          <Info className="h-3.5 w-3.5 shrink-0 text-[#7C6AF2]" />
           <span>Click a binding, then press any key combination. Press Esc to cancel.</span>
         </div>
       </SectionCard>
@@ -560,17 +560,17 @@ export function Settings() {
           <button
             type="button"
             onClick={handleExport}
-            className="flex-1 flex items-center justify-center gap-2 rounded-xl sm:rounded-2xl border-2 border-white/10 bg-[#16161b] hover:bg-[#282830] hover:border-white/20 px-4 py-2.5 sm:py-3 text-xs font-semibold text-zinc-200 hover:text-white transition-all cursor-pointer"
+            className="flex-1 flex items-center justify-center gap-2 rounded-xl sm:rounded-2xl border-2 border-[#2B2942] bg-[#0F0E17] hover:bg-[#201D36] hover:border-[#3F3B5F] px-4 py-2.5 sm:py-3 text-xs font-semibold text-[#ECEAFB]/80 hover:text-white transition-all cursor-pointer"
           >
-            <Download className="h-4 w-4 text-[#ff5511] shrink-0" />
+            <Download className="h-4 w-4 text-[#7C6AF2] shrink-0" />
             <span className="truncate">Export Configuration</span>
           </button>
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="flex-1 flex items-center justify-center gap-2 rounded-xl sm:rounded-2xl border-2 border-white/10 bg-[#16161b] hover:bg-[#282830] hover:border-white/20 px-4 py-2.5 sm:py-3 text-xs font-semibold text-zinc-200 hover:text-white transition-all cursor-pointer"
+            className="flex-1 flex items-center justify-center gap-2 rounded-xl sm:rounded-2xl border-2 border-[#2B2942] bg-[#0F0E17] hover:bg-[#201D36] hover:border-[#3F3B5F] px-4 py-2.5 sm:py-3 text-xs font-semibold text-[#ECEAFB]/80 hover:text-white transition-all cursor-pointer"
           >
-            <Upload className="h-4 w-4 text-[#ff5511] shrink-0" />
+            <Upload className="h-4 w-4 text-[#7C6AF2] shrink-0" />
             <span className="truncate">Import Configuration</span>
           </button>
         </div>

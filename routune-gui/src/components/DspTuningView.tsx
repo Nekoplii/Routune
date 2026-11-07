@@ -345,14 +345,14 @@ export function DspTuningView() {
               className={`lg:hidden flex items-center gap-2 rounded-full border-2 px-3.5 py-1.5 text-xs font-semibold transition-all cursor-pointer shrink-0 ${
                 micTestEnabled
                   ? "border-emerald-500/60 bg-emerald-500/20 text-emerald-300 shadow-md shadow-emerald-950/40"
-                  : "border-white/10 bg-[#202026] text-zinc-300 hover:text-white hover:border-white/20"
+                  : "border-[#2B2942] bg-[#171528] text-[#ECEAFB]/80 hover:text-white hover:border-[#3F3B5F]"
               } disabled:opacity-50`}
               title="Listen to microphone with live DSP effects directly in headphones"
             >
               {isTogglingMicTest ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin text-emerald-400" />
               ) : (
-                <Headphones className={`h-3.5 w-3.5 shrink-0 ${micTestEnabled ? "text-emerald-400" : "text-zinc-400"}`} />
+                <Headphones className={`h-3.5 w-3.5 shrink-0 ${micTestEnabled ? "text-emerald-400" : "text-[#ECEAFB]/60"}`} />
               )}
               <span className="whitespace-nowrap">{micTestEnabled ? "Testing Mic" : "Test Mic"}</span>
             </button>
@@ -369,20 +369,20 @@ export function DspTuningView() {
               className={`hidden lg:flex items-center gap-2 rounded-full border-2 px-4 py-2 text-xs font-semibold transition-all cursor-pointer shrink-0 ${
                 micTestEnabled
                   ? "border-emerald-500/60 bg-emerald-500/20 text-emerald-300 shadow-lg shadow-emerald-950/40"
-                  : "border-white/10 bg-[#202026] text-zinc-300 hover:text-white hover:border-white/20"
+                  : "border-[#2B2942] bg-[#171528] text-[#ECEAFB]/80 hover:text-white hover:border-[#3F3B5F]"
               } disabled:opacity-50`}
               title="Listen to microphone with live DSP effects directly in headphones"
             >
               {isTogglingMicTest ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin text-emerald-400" />
               ) : (
-                <Headphones className={`h-3.5 w-3.5 shrink-0 ${micTestEnabled ? "text-emerald-400" : "text-zinc-400"}`} />
+                <Headphones className={`h-3.5 w-3.5 shrink-0 ${micTestEnabled ? "text-emerald-400" : "text-[#ECEAFB]/60"}`} />
               )}
               <span className="whitespace-nowrap">{micTestEnabled ? "Testing Mic (Active)" : "Test Mic"}</span>
             </button>
           )}
 
-          <div className="flex items-center gap-1 rounded-full border-2 border-white/10 bg-[#202026] p-1.5 shrink-0">
+          <div className="flex items-center gap-1 rounded-full border-2 border-[#2B2942] bg-[#171528] p-1.5 shrink-0">
             {CHANNELS.map((ch) => {
               const Icon = ch.icon;
               const isSelected = ch.id === selectedChannel;
@@ -393,11 +393,11 @@ export function DspTuningView() {
                   onClick={() => setSelectedChannel(ch.id)}
                   className={`flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold transition-colors cursor-pointer border-2 shrink-0 ${
                     isSelected
-                      ? "bg-[#ff5511] border-[#ff5511] text-white"
-                      : "border-transparent text-zinc-300 hover:text-white hover:bg-[#282830]"
+                      ? "bg-[#7C6AF2] border-[#7C6AF2] text-white shadow-md shadow-[#7C6AF2]/25"
+                      : "border-transparent text-[#ECEAFB]/70 hover:text-white hover:bg-[#201D36]"
                   }`}
                 >
-                  <Icon className={`h-3.5 w-3.5 ${isSelected ? "text-white" : "text-zinc-400"}`} />
+                  <Icon className={`h-3.5 w-3.5 ${isSelected ? "text-white" : "text-[#ECEAFB]/60"}`} />
                   <span>{ch.name}</span>
                 </button>
               );
@@ -407,11 +407,11 @@ export function DspTuningView() {
       </div>
 
       {/* Main Equalizer Card */}
-      <div className="flex flex-col rounded-3xl border-2 border-white/10 bg-[#202026] p-4 sm:p-6 gap-5">
+      <div className="flex flex-col rounded-3xl border-2 border-[#2B2942] bg-[#171528] p-4 sm:p-6 gap-5">
         {/* Equalizer Header Row */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <h2 className="text-base font-bold text-white tracking-tight">
+            <h2 className="text-base font-bold text-[#ECEAFB] tracking-tight">
               Equalizer ({activeChannel.name})
             </h2>
             {currentPresetName === "Custom" ? (
@@ -419,7 +419,7 @@ export function DspTuningView() {
                 Custom
               </span>
             ) : (
-              <span className="rounded-full border border-[#ff5511]/30 bg-[#ff5511]/10 px-2.5 py-0.5 text-[11px] font-mono font-medium text-[#ff5511]">
+              <span className="rounded-full border border-[#7C6AF2]/40 bg-[#7C6AF2]/10 px-2.5 py-0.5 text-[11px] font-mono font-medium text-[#C4B5FD]">
                 {currentPresetName}
               </span>
             )}
@@ -428,17 +428,17 @@ export function DspTuningView() {
           <button
             type="button"
             onClick={handleResetFlat}
-            className="flex items-center gap-1.5 rounded-xl border-2 border-white/10 bg-[#282830] hover:bg-[#32323c] hover:border-white/20 px-3.5 py-1.5 text-xs font-medium text-zinc-200 hover:text-white transition-all cursor-pointer"
+            className="flex items-center gap-1.5 rounded-xl border-2 border-[#2B2942] bg-[#201D36] hover:bg-[#282444] hover:border-[#3F3B5F] px-3.5 py-1.5 text-xs font-medium text-[#ECEAFB]/80 hover:text-white transition-all cursor-pointer"
             title="Reset all 10 bands to 0 dB flat"
           >
-            <RotateCcw className="h-3.5 w-3.5 text-zinc-400" />
+            <RotateCcw className="h-3.5 w-3.5 text-[#ECEAFB]/60" />
             <span>Reset flat</span>
           </button>
         </div>
 
         {/* Quick Presets Grid */}
         <div className="flex flex-col gap-2">
-          <span className="text-[10px] font-mono uppercase tracking-widest text-zinc-500">
+          <span className="text-[10px] font-mono uppercase tracking-widest text-[#ECEAFB]/50">
             Presets
           </span>
           <div className="flex flex-wrap gap-2">
@@ -451,8 +451,8 @@ export function DspTuningView() {
                   onClick={() => applyPreset(p.name)}
                   className={`flex items-center gap-2 rounded-2xl px-4 py-2 text-xs font-semibold transition-all cursor-pointer border-2 ${
                     isActive
-                      ? "border-[#ff5511] bg-[#ff5511] text-white shadow-md shadow-[#ff5511]/20"
-                      : "border-transparent bg-[#16161b] text-zinc-400 hover:border-transparent hover:text-white hover:bg-[#282830]"
+                      ? "border-[#7C6AF2] bg-[#7C6AF2] text-white shadow-md shadow-[#7C6AF2]/25"
+                      : "border-transparent bg-[#0F0E17] text-[#ECEAFB]/60 hover:border-transparent hover:text-white hover:bg-[#201D36]"
                   }`}
                 >
                   <span>{p.name}</span>
@@ -463,7 +463,7 @@ export function DspTuningView() {
         </div>
 
         {/* Interactive Responsive SVG EQ Curve */}
-        <div className="relative w-full overflow-hidden rounded-2xl bg-[#16161b] border-2 border-white/10 pt-4 pb-2">
+        <div className="relative w-full overflow-hidden rounded-2xl bg-[#0F0E17] border-2 border-[#2B2942] pt-4 pb-2">
           <svg
             ref={svgRef}
             viewBox="0 0 1000 320"
@@ -474,9 +474,9 @@ export function DspTuningView() {
           >
             <defs>
               <linearGradient id="eqFillGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#ff5511" stopOpacity="0.45" />
-                <stop offset="50%" stopColor="#ff5511" stopOpacity="0.10" />
-                <stop offset="100%" stopColor="#ff5511" stopOpacity="0.35" />
+                <stop offset="0%" stopColor="#7C6AF2" stopOpacity="0.45" />
+                <stop offset="50%" stopColor="#7C6AF2" stopOpacity="0.10" />
+                <stop offset="100%" stopColor="#7C6AF2" stopOpacity="0.35" />
               </linearGradient>
             </defs>
 
@@ -493,7 +493,7 @@ export function DspTuningView() {
                   x="48"
                   y={line.y + 4}
                   textAnchor="end"
-                  className="text-[11px] font-mono fill-zinc-400 font-medium select-none"
+                  className="text-[11px] font-mono fill-[#ECEAFB]/60 font-medium select-none"
                 >
                   {line.db}
                 </text>
@@ -502,7 +502,7 @@ export function DspTuningView() {
                   y1={line.y}
                   x2="945"
                   y2={line.y}
-                  stroke={line.db === "0" ? "rgba(255,255,255,0.22)" : "rgba(255,255,255,0.06)"}
+                  stroke={line.db === "0" ? "rgba(196,181,253,0.35)" : "rgba(43,41,66,0.8)"}
                   strokeDasharray={line.db === "0" ? "none" : "4 4"}
                   strokeWidth="1"
                 />
@@ -516,7 +516,7 @@ export function DspTuningView() {
                 y="30"
                 width="84"
                 height="260"
-                fill="rgba(255, 85, 17, 0.05)"
+                fill="rgba(124, 106, 242, 0.08)"
                 rx="8"
                 className="pointer-events-none"
               />
@@ -539,7 +539,7 @@ export function DspTuningView() {
                 y1={Y_BASELINE}
                 x2={node.x}
                 y2={node.y}
-                stroke={hoveredBand === i ? "rgba(255, 85, 17, 0.9)" : "rgba(255, 85, 17, 0.45)"}
+                stroke={hoveredBand === i ? "rgba(124, 106, 242, 0.9)" : "rgba(124, 106, 242, 0.45)"}
                 strokeWidth={hoveredBand === i ? "2" : "1.5"}
                 className="pointer-events-none transition-all"
               />
@@ -550,11 +550,11 @@ export function DspTuningView() {
               <path
                 d={curvePath}
                 fill="none"
-                stroke="#ff5511"
+                stroke="#7C6AF2"
                 strokeWidth="3.5"
                 strokeLinecap="round"
                 strokeLinejoin="round"
-                className="pointer-events-none filter drop-shadow-[0_0_8px_rgba(255,85,17,0.45)]"
+                className="pointer-events-none filter drop-shadow-[0_0_8px_rgba(124,106,242,0.5)]"
               />
             )}
 
@@ -573,7 +573,7 @@ export function DspTuningView() {
                       cx={node.x}
                       cy={node.y}
                       r="13"
-                      fill="rgba(255, 85, 17, 0.22)"
+                      fill="rgba(124, 106, 242, 0.25)"
                       className="pointer-events-none transition-all"
                     />
                   )}
@@ -583,8 +583,8 @@ export function DspTuningView() {
                     cx={node.x}
                     cy={node.y}
                     r={isDragging ? 7.5 : isHovered ? 7 : 6}
-                    fill="#ff5511"
-                    stroke="#ffffff"
+                    fill="#7C6AF2"
+                    stroke="#ECEAFB"
                     strokeWidth="1.8"
                     onPointerDown={(e) => handlePointerDown(i, e)}
                     onDoubleClick={() => dispatchSetEqBand(selectedChannel, i, 0.0)}
@@ -596,7 +596,7 @@ export function DspTuningView() {
                       const next = Math.max(-12, Math.min(12, Math.round((gain + delta) * 10) / 10));
                       dispatchSetEqBand(selectedChannel, i, next);
                     }}
-                    className="cursor-ns-resize transition-all drop-shadow-[0_0_6px_rgba(255,85,17,0.6)]"
+                    className="cursor-ns-resize transition-all drop-shadow-[0_0_6px_rgba(124,106,242,0.6)]"
                   >
                     <title>{`${FREQ_LABELS[i]}Hz: ${gain > 0 ? "+" : ""}${gain.toFixed(1)} dB (drag, scroll wheel, or double-click to reset)`}</title>
                   </circle>
@@ -624,7 +624,7 @@ export function DspTuningView() {
                 y="308"
                 textAnchor="middle"
                 className={`text-[11px] font-mono font-medium select-none transition-colors ${
-                  hoveredBand === i ? "fill-[#ff5511] font-bold" : "fill-zinc-400"
+                  hoveredBand === i ? "fill-[#C4B5FD] font-bold" : "fill-[#ECEAFB]/60"
                 }`}
               >
                 {FREQ_LABELS[i]}
@@ -633,10 +633,10 @@ export function DspTuningView() {
           </svg>
 
           {/* Bottom Card Specs & Interactive Hint */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between px-6 pt-2 pb-1 text-[11px] font-mono text-zinc-400 border-t border-white/5 gap-1">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between px-6 pt-2 pb-1 text-[11px] font-mono text-[#ECEAFB]/60 border-t border-[#2B2942]/60 gap-1">
             <span>10 bands · Q ≈ 1.41 · ±12 dB peaking filters</span>
             <div className="flex items-center gap-3">
-              <span className="hidden sm:inline text-zinc-500">Scroll wheel on node to adjust</span>
+              <span className="hidden sm:inline text-[#ECEAFB]/40">Scroll wheel on node to adjust</span>
               <span>48 kHz 32-bit float</span>
             </div>
           </div>
@@ -646,7 +646,7 @@ export function DspTuningView() {
       {/* Effects Section */}
       <div className="flex flex-col gap-3">
         <div>
-          <h2 className="text-base font-bold text-white tracking-tight">
+          <h2 className="text-base font-bold text-[#ECEAFB] tracking-tight">
             Effects
           </h2>
         </div>
@@ -658,8 +658,8 @@ export function DspTuningView() {
             <div
               className={`flex flex-col justify-between rounded-3xl border p-5 gap-4 transition-colors ${
                 isAiNoiseActive
-                  ? "border-[#ff5511]/50 bg-[#24242c]"
-                  : "border-white/10 bg-[#202026]"
+                  ? "border-[#7C6AF2]/60 bg-[#1A172E] shadow-xl shadow-[#7C6AF2]/10"
+                  : "border-[#2B2942] bg-[#171528]"
               }`}
             >
               <div className="flex items-start justify-between gap-3">
@@ -667,17 +667,17 @@ export function DspTuningView() {
                   <div
                     className={`flex h-10 w-10 items-center justify-center rounded-xl border transition-colors ${
                       isAiNoiseActive
-                        ? "bg-[#ff5511]/20 border-[#ff5511]/40 text-[#ff5511]"
-                        : "bg-[#16161b] border-white/10 text-zinc-300"
+                        ? "bg-[#7C6AF2]/20 border-[#7C6AF2]/40 text-[#7C6AF2]"
+                        : "bg-[#0F0E17] border-[#2B2942] text-[#ECEAFB]/70"
                     }`}
                   >
                     <AudioWaveform className="h-5 w-5" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-bold text-white tracking-tight">
+                    <h3 className="text-sm font-bold text-[#ECEAFB] tracking-tight">
                       AI Noise Suppression
                     </h3>
-                    <span className="text-[11px] font-mono text-zinc-400">RNNoise Neural Filter</span>
+                    <span className="text-[11px] font-mono text-[#ECEAFB]/60">RNNoise Neural Filter</span>
                   </div>
                 </div>
 
@@ -690,8 +690,8 @@ export function DspTuningView() {
                   disabled={!isConnected}
                   className={`relative inline-flex h-6 w-11 shrink-0 p-0.5 items-center rounded-full transition-colors duration-200 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed border-0 ${
                     isAiNoiseActive
-                      ? "bg-[#ff5511] shadow-[0_0_12px_rgba(255,85,17,0.4)]"
-                      : "bg-[#282832] ring-1 ring-white/10 hover:ring-white/20"
+                      ? "bg-[#7C6AF2] shadow-[0_0_12px_rgba(124,106,242,0.4)]"
+                      : "bg-[#201D36] ring-1 ring-[#2B2942] hover:ring-[#3F3B5F]"
                   }`}
                   aria-label="Toggle AI Noise Suppression"
                 >
@@ -703,15 +703,15 @@ export function DspTuningView() {
                 </button>
               </div>
 
-              <p className="text-xs text-zinc-300 leading-relaxed">
+              <p className="text-xs text-[#ECEAFB]/70 leading-relaxed">
                 Filters background chatter, fan whine, and keyboard noise using neural networks.
               </p>
 
               {/* Suppression Level Slider */}
               <div className="flex flex-col gap-1.5">
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-zinc-400 font-medium">Reduction Level</span>
-                  <span className="font-mono text-zinc-200 font-semibold">
+                  <span className="text-[#ECEAFB]/60 font-medium">Reduction Level</span>
+                  <span className="font-mono text-[#ECEAFB] font-semibold">
                     {Math.round((aiNoiseLevel ?? 1.0) * 100)}%
                   </span>
                 </div>
@@ -726,15 +726,15 @@ export function DspTuningView() {
                     const val = parseFloat(e.target.value);
                     setAiNoiseLevel(selectedChannel, val);
                   }}
-                  className="w-full h-1.5 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-[#ff5511] disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="w-full h-1.5 bg-[#2B2942] rounded-lg appearance-none cursor-pointer accent-[#7C6AF2] disabled:opacity-40 disabled:cursor-not-allowed"
                   title={`AI Noise Level: ${Math.round((aiNoiseLevel ?? 1.0) * 100)}%`}
                 />
-                <div className="flex justify-between text-[10px] font-mono font-medium text-zinc-500 select-none px-0.5">
+                <div className="flex justify-between text-[10px] font-mono font-medium text-[#ECEAFB]/50 select-none px-0.5">
                   <button
                     type="button"
                     onClick={() => isAiNoiseActive && setAiNoiseLevel(selectedChannel, 0.0)}
                     disabled={!isConnected || !isAiNoiseActive}
-                    className="hover:text-zinc-300 disabled:opacity-40 transition-colors cursor-pointer"
+                    className="hover:text-[#ECEAFB] disabled:opacity-40 transition-colors cursor-pointer"
                   >
                     Min
                   </button>
@@ -742,7 +742,7 @@ export function DspTuningView() {
                     type="button"
                     onClick={() => isAiNoiseActive && setAiNoiseLevel(selectedChannel, 1.0)}
                     disabled={!isConnected || !isAiNoiseActive}
-                    className="hover:text-zinc-300 disabled:opacity-40 transition-colors cursor-pointer"
+                    className="hover:text-[#ECEAFB] disabled:opacity-40 transition-colors cursor-pointer"
                   >
                     Max
                   </button>
@@ -758,8 +758,8 @@ export function DspTuningView() {
               <div
                 className={`flex flex-col justify-between rounded-3xl border p-5 gap-4 transition-colors ${
                   currentSpatial.enabled
-                    ? "border-[#ff5511]/50 bg-[#24242c]"
-                    : "border-white/10 bg-[#202026]"
+                    ? "border-[#7C6AF2]/60 bg-[#1A172E] shadow-xl shadow-[#7C6AF2]/10"
+                    : "border-[#2B2942] bg-[#171528]"
                 }`}
               >
                 <div className="flex items-start justify-between gap-3">
@@ -767,15 +767,15 @@ export function DspTuningView() {
                     <div
                       className={`flex h-10 w-10 items-center justify-center rounded-xl border transition-colors ${
                         currentSpatial.enabled
-                          ? "bg-[#ff5511]/20 border-[#ff5511]/40 text-[#ff5511]"
-                          : "bg-[#16161b] border-white/10 text-zinc-300"
+                          ? "bg-[#7C6AF2]/20 border-[#7C6AF2]/40 text-[#7C6AF2]"
+                          : "bg-[#0F0E17] border-[#2B2942] text-[#ECEAFB]/70"
                       }`}
                     >
                       <Headphones className="h-5 w-5" />
                     </div>
                     <div>
-                      <h3 className="text-sm font-bold text-white tracking-tight">Spatial Audio</h3>
-                      <span className="text-[11px] font-mono text-zinc-400">3D Soundstage</span>
+                      <h3 className="text-sm font-bold text-[#ECEAFB] tracking-tight">Spatial Audio</h3>
+                      <span className="text-[11px] font-mono text-[#ECEAFB]/60">3D Soundstage</span>
                     </div>
                   </div>
 
@@ -790,8 +790,8 @@ export function DspTuningView() {
                     disabled={!isConnected}
                     className={`relative inline-flex h-6 w-11 shrink-0 p-0.5 items-center rounded-full transition-colors duration-200 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed border-0 ${
                       currentSpatial.enabled
-                        ? "bg-[#ff5511] shadow-[0_0_12px_rgba(255,85,17,0.4)]"
-                        : "bg-[#282832] ring-1 ring-white/10 hover:ring-white/20"
+                        ? "bg-[#7C6AF2] shadow-[0_0_12px_rgba(124,106,242,0.4)]"
+                        : "bg-[#201D36] ring-1 ring-[#2B2942] hover:ring-[#3F3B5F]"
                     }`}
                     aria-label="Toggle Spatial Audio"
                   >
@@ -804,7 +804,7 @@ export function DspTuningView() {
                 </div>
 
                 {/* Mode Selector Tabs (Headphone vs Speaker) */}
-                <div className="flex items-center rounded-xl bg-[#18181e] p-1 border border-white/5 gap-1">
+                <div className="flex items-center rounded-xl bg-[#0F0E17] p-1 border border-[#2B2942]/60 gap-1">
                   <button
                     type="button"
                     onClick={() =>
@@ -813,8 +813,8 @@ export function DspTuningView() {
                     disabled={!isConnected || !currentSpatial.enabled}
                     className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg text-xs font-medium transition-all ${
                       currentSpatial.mode === SpatialAudioMode.HEADPHONE
-                        ? "bg-[#2e2e38] text-white shadow-sm font-semibold border border-white/10"
-                        : "text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.03]"
+                        ? "bg-[#201D36] text-white shadow-sm font-semibold border border-[#2B2942]"
+                        : "text-[#ECEAFB]/60 hover:text-white hover:bg-white/[0.03]"
                     } disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer`}
                   >
                     <Headphones className="h-3.5 w-3.5" />
@@ -828,8 +828,8 @@ export function DspTuningView() {
                     disabled={!isConnected || !currentSpatial.enabled}
                     className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg text-xs font-medium transition-all ${
                       currentSpatial.mode === SpatialAudioMode.SPEAKER
-                        ? "bg-[#2e2e38] text-white shadow-sm font-semibold border border-white/10"
-                        : "text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.03]"
+                        ? "bg-[#201D36] text-white shadow-sm font-semibold border border-[#2B2942]"
+                        : "text-[#ECEAFB]/60 hover:text-white hover:bg-white/[0.03]"
                     } disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer`}
                   >
                     <Speaker className="h-3.5 w-3.5" />
@@ -837,7 +837,7 @@ export function DspTuningView() {
                   </button>
                 </div>
 
-                <p className="text-xs text-zinc-300 leading-relaxed">
+                <p className="text-xs text-[#ECEAFB]/70 leading-relaxed">
                   {currentSpatial.mode === SpatialAudioMode.HEADPHONE
                     ? "Binaural crossfeed and HRTF head-shadow delay for immersive headphone immersion."
                     : "Acoustic crosstalk cancellation and stereo soundstage expansion for desktop speakers."}
@@ -846,8 +846,8 @@ export function DspTuningView() {
                 {/* Spatial Strength Slider */}
                 <div className="flex flex-col gap-1.5">
                   <div className="flex items-center justify-between text-xs">
-                    <span className="text-zinc-400 font-medium">Effect Strength</span>
-                    <span className="font-mono text-zinc-200 font-semibold">
+                    <span className="text-[#ECEAFB]/60 font-medium">Effect Strength</span>
+                    <span className="font-mono text-[#ECEAFB] font-semibold">
                       {Math.round(currentSpatial.strength * 100)}%
                     </span>
                   </div>
@@ -861,17 +861,17 @@ export function DspTuningView() {
                     onChange={(e) =>
                       setSpatialAudio(selectedChannel, { strength: parseFloat(e.target.value) })
                     }
-                    className="w-full h-1.5 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-[#ff5511] disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="w-full h-1.5 bg-[#2B2942] rounded-lg appearance-none cursor-pointer accent-[#7C6AF2] disabled:opacity-40 disabled:cursor-not-allowed"
                     title={`Spatial Strength: ${Math.round(currentSpatial.strength * 100)}%`}
                   />
-                  <div className="flex justify-between text-[10px] font-mono font-medium text-zinc-500 select-none px-0.5">
+                  <div className="flex justify-between text-[10px] font-mono font-medium text-[#ECEAFB]/50 select-none px-0.5">
                     <button
                       type="button"
                       onClick={() =>
                         currentSpatial.enabled && setSpatialAudio(selectedChannel, { strength: 0.0 })
                       }
                       disabled={!isConnected || !currentSpatial.enabled}
-                      className="hover:text-zinc-300 disabled:opacity-40 transition-colors cursor-pointer"
+                      className="hover:text-[#ECEAFB] disabled:opacity-40 transition-colors cursor-pointer"
                     >
                       Min
                     </button>
@@ -881,7 +881,7 @@ export function DspTuningView() {
                         currentSpatial.enabled && setSpatialAudio(selectedChannel, { strength: 1.0 })
                       }
                       disabled={!isConnected || !currentSpatial.enabled}
-                      className="hover:text-zinc-300 disabled:opacity-40 transition-colors cursor-pointer"
+                      className="hover:text-[#ECEAFB] disabled:opacity-40 transition-colors cursor-pointer"
                     >
                       Max
                     </button>
@@ -893,8 +893,8 @@ export function DspTuningView() {
               <div
                 className={`flex flex-col justify-between rounded-3xl border p-5 gap-4 transition-colors ${
                   currentBoost.enabled
-                    ? "border-[#ff5511]/50 bg-[#24242c]"
-                    : "border-white/10 bg-[#202026]"
+                    ? "border-[#7C6AF2]/60 bg-[#1A172E] shadow-xl shadow-[#7C6AF2]/10"
+                    : "border-[#2B2942] bg-[#171528]"
                 }`}
               >
                 <div className="flex items-start justify-between gap-3">
@@ -902,15 +902,15 @@ export function DspTuningView() {
                     <div
                       className={`flex h-10 w-10 items-center justify-center rounded-xl border transition-colors ${
                         currentBoost.enabled
-                          ? "bg-[#ff5511]/20 border-[#ff5511]/40 text-[#ff5511]"
-                          : "bg-[#16161b] border-white/10 text-zinc-300"
+                          ? "bg-[#7C6AF2]/20 border-[#7C6AF2]/40 text-[#7C6AF2]"
+                          : "bg-[#0F0E17] border-[#2B2942] text-[#ECEAFB]/70"
                       }`}
                     >
                       <Volume2 className="h-5 w-5" />
                     </div>
                     <div>
-                      <h3 className="text-sm font-bold text-white tracking-tight">Volume Boost</h3>
-                      <span className="text-[11px] font-mono text-zinc-400">Soft-Limiting Amp</span>
+                      <h3 className="text-sm font-bold text-[#ECEAFB] tracking-tight">Volume Boost</h3>
+                      <span className="text-[11px] font-mono text-[#ECEAFB]/60">Soft-Limiting Amp</span>
                     </div>
                   </div>
 
@@ -925,8 +925,8 @@ export function DspTuningView() {
                     disabled={!isConnected}
                     className={`relative inline-flex h-6 w-11 shrink-0 p-0.5 items-center rounded-full transition-colors duration-200 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed border-0 ${
                       currentBoost.enabled
-                        ? "bg-[#ff5511] shadow-[0_0_12px_rgba(255,85,17,0.4)]"
-                        : "bg-[#282832] ring-1 ring-white/10 hover:ring-white/20"
+                        ? "bg-[#7C6AF2] shadow-[0_0_12px_rgba(124,106,242,0.4)]"
+                        : "bg-[#201D36] ring-1 ring-[#2B2942] hover:ring-[#3F3B5F]"
                     }`}
                     aria-label="Toggle Volume Boost"
                   >
@@ -938,15 +938,15 @@ export function DspTuningView() {
                   </button>
                 </div>
 
-                <p className="text-xs text-zinc-300 leading-relaxed">
+                <p className="text-xs text-[#ECEAFB]/70 leading-relaxed">
                   Amplifies quiet audio details with soft saturation limiting to prevent harsh digital clipping.
                 </p>
 
                 {/* Boost dB Slider */}
                 <div className="flex flex-col gap-1.5">
                   <div className="flex items-center justify-between text-xs">
-                    <span className="text-zinc-400 font-medium">Gain Boost</span>
-                    <span className="font-mono text-zinc-200 font-semibold">
+                    <span className="text-[#ECEAFB]/60 font-medium">Gain Boost</span>
+                    <span className="font-mono text-[#ECEAFB] font-semibold">
                       +{currentBoost.boostDb.toFixed(1)} dB
                     </span>
                   </div>
@@ -960,17 +960,17 @@ export function DspTuningView() {
                     onChange={(e) =>
                       setVolumeBoost(selectedChannel, { boostDb: parseFloat(e.target.value) })
                     }
-                    className="w-full h-1.5 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-[#ff5511] disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="w-full h-1.5 bg-[#2B2942] rounded-lg appearance-none cursor-pointer accent-[#7C6AF2] disabled:opacity-40 disabled:cursor-not-allowed"
                     title={`Volume Boost: +${currentBoost.boostDb.toFixed(1)} dB`}
                   />
-                  <div className="flex justify-between text-[10px] font-mono font-medium text-zinc-500 select-none px-0.5">
+                  <div className="flex justify-between text-[10px] font-mono font-medium text-[#ECEAFB]/50 select-none px-0.5">
                     <button
                       type="button"
                       onClick={() =>
                         currentBoost.enabled && setVolumeBoost(selectedChannel, { boostDb: 0.0 })
                       }
                       disabled={!isConnected || !currentBoost.enabled}
-                      className="hover:text-zinc-300 disabled:opacity-40 transition-colors cursor-pointer"
+                      className="hover:text-[#ECEAFB] disabled:opacity-40 transition-colors cursor-pointer"
                     >
                       0 dB
                     </button>
@@ -980,7 +980,7 @@ export function DspTuningView() {
                         currentBoost.enabled && setVolumeBoost(selectedChannel, { boostDb: 12.0 })
                       }
                       disabled={!isConnected || !currentBoost.enabled}
-                      className="hover:text-zinc-300 disabled:opacity-40 transition-colors cursor-pointer"
+                      className="hover:text-[#ECEAFB] disabled:opacity-40 transition-colors cursor-pointer"
                     >
                       +12 dB
                     </button>
@@ -992,7 +992,7 @@ export function DspTuningView() {
 
           {/* Fallback info card for channels without additional DSP effects */}
           {!isPlaybackDspChannel && selectedChannel !== AudioChannel.CHAT && selectedChannel !== AudioChannel.MIC && (
-            <div className="col-span-full rounded-2xl border border-white/5 bg-[#202026]/60 p-5 text-center text-xs text-zinc-400 font-mono">
+            <div className="col-span-full rounded-2xl border border-[#2B2942] bg-[#171528]/60 p-5 text-center text-xs text-[#ECEAFB]/60 font-mono">
               Pure 10-band biquad equalizer active.
             </div>
           )}
@@ -1004,8 +1004,8 @@ export function DspTuningView() {
               <div
                 className={`flex flex-col justify-between rounded-3xl border p-5 gap-4 transition-colors ${
                   noiseGate.enabled
-                    ? "border-[#ff5511]/50 bg-[#24242c]"
-                    : "border-white/10 bg-[#202026]"
+                    ? "border-[#7C6AF2]/60 bg-[#1A172E] shadow-xl shadow-[#7C6AF2]/10"
+                    : "border-[#2B2942] bg-[#171528]"
                 }`}
               >
                 <div className="flex items-start justify-between gap-3">
@@ -1013,15 +1013,15 @@ export function DspTuningView() {
                     <div
                       className={`flex h-10 w-10 items-center justify-center rounded-xl border transition-colors ${
                         noiseGate.enabled
-                          ? "bg-[#ff5511]/20 border-[#ff5511]/40 text-[#ff5511]"
-                          : "bg-[#16161b] border-white/10 text-zinc-300"
+                          ? "bg-[#7C6AF2]/20 border-[#7C6AF2]/40 text-[#7C6AF2]"
+                          : "bg-[#0F0E17] border-[#2B2942] text-[#ECEAFB]/70"
                       }`}
                     >
                       <Sliders className="h-5 w-5" />
                     </div>
                     <div>
-                      <h3 className="text-sm font-bold text-white tracking-tight">Noise Gate</h3>
-                      <span className="text-[11px] font-mono text-zinc-400">Background Gate</span>
+                      <h3 className="text-sm font-bold text-[#ECEAFB] tracking-tight">Noise Gate</h3>
+                      <span className="text-[11px] font-mono text-[#ECEAFB]/60">Background Gate</span>
                     </div>
                   </div>
 
@@ -1034,8 +1034,8 @@ export function DspTuningView() {
                     disabled={!isConnected}
                     className={`relative inline-flex h-6 w-11 shrink-0 p-0.5 items-center rounded-full transition-colors duration-200 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed border-0 ${
                       noiseGate.enabled
-                        ? "bg-[#ff5511] shadow-[0_0_12px_rgba(255,85,17,0.4)]"
-                        : "bg-[#282832] ring-1 ring-white/10 hover:ring-white/20"
+                        ? "bg-[#7C6AF2] shadow-[0_0_12px_rgba(124,106,242,0.4)]"
+                        : "bg-[#201D36] ring-1 ring-[#2B2942] hover:ring-[#3F3B5F]"
                     }`}
                     aria-label="Toggle Noise Gate"
                   >
@@ -1047,15 +1047,15 @@ export function DspTuningView() {
                   </button>
                 </div>
 
-                <p className="text-xs text-zinc-300 leading-relaxed">
+                <p className="text-xs text-[#ECEAFB]/70 leading-relaxed">
                   Mutes microphone input when your voice drops below threshold to cut out room hiss.
                 </p>
 
                 {/* Single Threshold Slider */}
                 <div className="flex flex-col gap-1.5">
                   <div className="flex items-center justify-between text-xs">
-                    <span className="text-zinc-400 font-medium">Threshold</span>
-                    <span className="font-mono text-zinc-200 font-semibold">
+                    <span className="text-[#ECEAFB]/60 font-medium">Threshold</span>
+                    <span className="font-mono text-[#ECEAFB] font-semibold">
                       {noiseGate.thresholdDb.toFixed(1)} dB
                     </span>
                   </div>
@@ -1067,15 +1067,15 @@ export function DspTuningView() {
                     value={noiseGate.thresholdDb}
                     disabled={!isConnected || !noiseGate.enabled}
                     onChange={(e) => setNoiseGate({ thresholdDb: parseFloat(e.target.value) })}
-                    className="w-full h-1.5 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-[#ff5511] disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="w-full h-1.5 bg-[#2B2942] rounded-lg appearance-none cursor-pointer accent-[#7C6AF2] disabled:opacity-40 disabled:cursor-not-allowed"
                     title={`Threshold: ${noiseGate.thresholdDb.toFixed(1)} dB`}
                   />
-                  <div className="flex justify-between text-[10px] font-mono font-medium text-zinc-500 select-none px-0.5">
+                  <div className="flex justify-between text-[10px] font-mono font-medium text-[#ECEAFB]/50 select-none px-0.5">
                     <button
                       type="button"
                       onClick={() => noiseGate.enabled && setNoiseGate({ thresholdDb: -70 })}
                       disabled={!isConnected || !noiseGate.enabled}
-                      className="hover:text-zinc-300 disabled:opacity-40 transition-colors cursor-pointer"
+                      className="hover:text-[#ECEAFB] disabled:opacity-40 transition-colors cursor-pointer"
                     >
                       Min
                     </button>
@@ -1083,7 +1083,7 @@ export function DspTuningView() {
                       type="button"
                       onClick={() => noiseGate.enabled && setNoiseGate({ thresholdDb: -10 })}
                       disabled={!isConnected || !noiseGate.enabled}
-                      className="hover:text-zinc-300 disabled:opacity-40 transition-colors cursor-pointer"
+                      className="hover:text-[#ECEAFB] disabled:opacity-40 transition-colors cursor-pointer"
                     >
                       Max
                     </button>
@@ -1095,8 +1095,8 @@ export function DspTuningView() {
               <div
                 className={`flex flex-col justify-between rounded-3xl border p-5 gap-4 transition-colors ${
                   compressor.enabled
-                    ? "border-[#ff5511]/50 bg-[#24242c]"
-                    : "border-white/10 bg-[#202026]"
+                    ? "border-[#7C6AF2]/60 bg-[#1A172E] shadow-xl shadow-[#7C6AF2]/10"
+                    : "border-[#2B2942] bg-[#171528]"
                 }`}
               >
                 <div className="flex items-start justify-between gap-3">
@@ -1104,15 +1104,15 @@ export function DspTuningView() {
                     <div
                       className={`flex h-10 w-10 items-center justify-center rounded-xl border transition-colors ${
                         compressor.enabled
-                          ? "bg-[#ff5511]/20 border-[#ff5511]/40 text-[#ff5511]"
-                          : "bg-[#16161b] border-white/10 text-zinc-300"
+                          ? "bg-[#7C6AF2]/20 border-[#7C6AF2]/40 text-[#7C6AF2]"
+                          : "bg-[#0F0E17] border-[#2B2942] text-[#ECEAFB]/70"
                       }`}
                     >
                       <Activity className="h-5 w-5" />
                     </div>
                     <div>
-                      <h3 className="text-sm font-bold text-white tracking-tight">Compressor</h3>
-                      <span className="text-[11px] font-mono text-zinc-400">Dynamic Leveler</span>
+                      <h3 className="text-sm font-bold text-[#ECEAFB] tracking-tight">Compressor</h3>
+                      <span className="text-[11px] font-mono text-[#ECEAFB]/60">Dynamic Leveler</span>
                     </div>
                   </div>
 
@@ -1125,8 +1125,8 @@ export function DspTuningView() {
                     disabled={!isConnected}
                     className={`relative inline-flex h-6 w-11 shrink-0 p-0.5 items-center rounded-full transition-colors duration-200 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed border-0 ${
                       compressor.enabled
-                        ? "bg-[#ff5511] shadow-[0_0_12px_rgba(255,85,17,0.4)]"
-                        : "bg-[#282832] ring-1 ring-white/10 hover:ring-white/20"
+                        ? "bg-[#7C6AF2] shadow-[0_0_12px_rgba(124,106,242,0.4)]"
+                        : "bg-[#201D36] ring-1 ring-[#2B2942] hover:ring-[#3F3B5F]"
                     }`}
                     aria-label="Toggle Compressor"
                   >
@@ -1138,15 +1138,15 @@ export function DspTuningView() {
                   </button>
                 </div>
 
-                <p className="text-xs text-zinc-300 leading-relaxed">
+                <p className="text-xs text-[#ECEAFB]/70 leading-relaxed">
                   Evens out loud shouts and quiet whispers to deliver broadcast-quality consistent speech.
                 </p>
 
                 {/* Single Compression Amount Slider */}
                 <div className="flex flex-col gap-1.5">
                   <div className="flex items-center justify-between text-xs">
-                    <span className="text-zinc-400 font-medium">Compression</span>
-                    <span className="font-mono text-zinc-200 font-semibold">
+                    <span className="text-[#ECEAFB]/60 font-medium">Compression</span>
+                    <span className="font-mono text-[#ECEAFB] font-semibold">
                       {Math.round(compAmount * 100)}%
                     </span>
                   </div>
@@ -1158,15 +1158,15 @@ export function DspTuningView() {
                     value={compAmount}
                     disabled={!isConnected || !compressor.enabled}
                     onChange={(e) => handleCompressorAmountChange(parseFloat(e.target.value))}
-                    className="w-full h-1.5 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-[#ff5511] disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="w-full h-1.5 bg-[#2B2942] rounded-lg appearance-none cursor-pointer accent-[#7C6AF2] disabled:opacity-40 disabled:cursor-not-allowed"
                     title={`Compression: ${Math.round(compAmount * 100)}%`}
                   />
-                  <div className="flex justify-between text-[10px] font-mono font-medium text-zinc-500 select-none px-0.5">
+                  <div className="flex justify-between text-[10px] font-mono font-medium text-[#ECEAFB]/50 select-none px-0.5">
                     <button
                       type="button"
                       onClick={() => compressor.enabled && handleCompressorAmountChange(0.0)}
                       disabled={!isConnected || !compressor.enabled}
-                      className="hover:text-zinc-300 disabled:opacity-40 transition-colors cursor-pointer"
+                      className="hover:text-[#ECEAFB] disabled:opacity-40 transition-colors cursor-pointer"
                     >
                       Min
                     </button>

@@ -101,23 +101,23 @@ export function ChannelRoutingPanels() {
           return (
             <div
               key={ch.id}
-              className={`flex flex-col rounded-2xl border bg-zinc-900/60 p-4 shadow-xl backdrop-blur-md transition-all ${ch.accentBorder} hover:border-white/10`}
+              className={`flex flex-col rounded-2xl border bg-[#171528] p-4 shadow-xl backdrop-blur-md transition-all ${ch.accentBorder} hover:border-[#3F3B5F]`}
             >
               {/* Channel Header */}
-              <div className="flex items-center justify-between pb-3 border-b border-white/5">
+              <div className="flex items-center justify-between pb-3 border-b border-[#2B2942]/60">
                 <div className="flex items-center gap-2">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-zinc-950 border border-white/5">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#0F0E17] border border-[#2B2942]/60">
                     <Icon className={`h-4 w-4 ${ch.color}`} />
                   </div>
                   <div>
-                    <span className="text-sm font-bold text-white block leading-none">
+                    <span className="text-sm font-bold text-[#ECEAFB] block leading-none">
                       {ch.name}
                     </span>
-                    <span className="text-[10px] font-mono text-zinc-400">Virtual Sink</span>
+                    <span className="text-[10px] font-mono text-[#ECEAFB]/50">Virtual Sink</span>
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5 font-mono text-xs">
-                  <span className={isClipping ? "text-rose-400 font-bold" : "text-zinc-400"}>
+                  <span className={isClipping ? "text-rose-400 font-bold" : "text-[#ECEAFB]/60"}>
                     {isConnected ? `${peakDb.toFixed(1)} dB` : "-∞ dB"}
                   </span>
                 </div>
@@ -125,7 +125,7 @@ export function ChannelRoutingPanels() {
 
               {/* Mini Peak/RMS Audio Bar */}
               <div className="mt-3 flex flex-col gap-1.5">
-                <div className="relative h-2.5 w-full overflow-hidden rounded bg-zinc-950 border border-white/5 p-0.5">
+                <div className="relative h-2.5 w-full overflow-hidden rounded bg-[#0F0E17] border border-[#2B2942]/60 p-0.5">
                   <div
                     className="h-full rounded-sm transition-all duration-75 ease-out"
                     style={{
@@ -141,9 +141,9 @@ export function ChannelRoutingPanels() {
                     }}
                   />
                 </div>
-                <div className="relative h-1 w-full overflow-hidden rounded bg-zinc-950/80 border border-white/5">
+                <div className="relative h-1 w-full overflow-hidden rounded bg-[#0F0E17] border border-[#2B2942]/60">
                   <div
-                    className="h-full bg-cyan-400/80 transition-all duration-100 ease-out"
+                    className="h-full bg-[#7C6AF2]/80 transition-all duration-100 ease-out"
                     style={{ width: `${rmsPct}%` }}
                   />
                 </div>
@@ -151,10 +151,10 @@ export function ChannelRoutingPanels() {
 
               {/* Hardware Device Routing Section */}
               <div className="mt-4 flex flex-col gap-1.5">
-                <div className="flex items-center justify-between text-[11px] font-mono font-medium text-zinc-400">
+                <div className="flex items-center justify-between text-[11px] font-mono font-medium text-[#ECEAFB]/60">
                   <span>TARGET HARDWARE</span>
                   {isUpdating ? (
-                    <span className="flex items-center gap-1 text-[10px] text-sky-400 font-mono">
+                    <span className="flex items-center gap-1 text-[10px] text-[#7C6AF2] font-mono">
                       <Loader2 className="h-2.5 w-2.5 animate-spin" /> Routing...
                     </span>
                   ) : currentDevice !== "none" && currentDevice !== "Unassigned" ? (
@@ -162,7 +162,7 @@ export function ChannelRoutingPanels() {
                       <CheckCircle2 className="h-2.5 w-2.5" /> Bound
                     </span>
                   ) : (
-                    <span className="text-[10px] text-zinc-500 font-mono">
+                    <span className="text-[10px] text-[#ECEAFB]/40 font-mono">
                       Muted
                     </span>
                   )}
@@ -178,7 +178,7 @@ export function ChannelRoutingPanels() {
                   onChange={(e) => {
                     setChannelRouting(ch.id, e.target.value);
                   }}
-                  className="w-full rounded-xl border border-white/10 bg-zinc-950 px-3 py-2 text-xs text-zinc-200 font-mono shadow-inner transition hover:border-white/20 focus:border-sky-500 focus:outline-none disabled:opacity-50 cursor-pointer"
+                  className="w-full rounded-xl border border-[#2B2942] bg-[#0F0E17] px-3 py-2 text-xs text-[#ECEAFB] font-mono shadow-inner transition hover:border-[#3F3B5F] focus:border-[#7C6AF2] focus:outline-none disabled:opacity-50 cursor-pointer"
                 >
                   <option value="none">-- Unassigned (Mute) --</option>
                   {hardwareOutputs.map((device) => (
@@ -188,7 +188,7 @@ export function ChannelRoutingPanels() {
                   ))}
                 </select>
 
-                <div className="mt-1 flex items-center justify-between text-[10px] font-mono text-zinc-400">
+                <div className="mt-1 flex items-center justify-between text-[10px] font-mono text-[#ECEAFB]/50">
                   <span>routune-{ch.name.toLowerCase()}</span>
                   <span className="truncate max-w-[140px]" title={currentDevice}>
                     {currentDevice === "none" || currentDevice === "Unassigned"

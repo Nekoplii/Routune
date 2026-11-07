@@ -113,7 +113,7 @@ function ChannelVuMeter({ channelId, isMuted }: { channelId: AudioChannel; isMut
       ctx.clearRect(0, 0, W, H);
 
       // Background
-      ctx.fillStyle = "#16161b";
+      ctx.fillStyle = "#0F0E17";
       ctx.beginPath();
       ctx.roundRect(0, 0, W, H, W / 2);
       ctx.fill();
@@ -122,7 +122,7 @@ function ChannelVuMeter({ channelId, isMuted }: { channelId: AudioChannel; isMut
       const rmsGrad = ctx.createLinearGradient(0, H, 0, 0);
       rmsGrad.addColorStop(0,    "rgba(16,185,129,0.75)");  // emerald-500
       rmsGrad.addColorStop(0.65, "rgba(251,191,36,0.75)");  // amber-400
-      rmsGrad.addColorStop(1,    "rgba(255,85,17,0.75)");   // brand orange
+      rmsGrad.addColorStop(1,    "rgba(124,106,242,0.85)"); // primary violet
       ctx.fillStyle = rmsGrad;
       ctx.beginPath();
       ctx.roundRect(0, H * (1 - rmsPct), W, H * rmsPct, W / 2);
@@ -132,7 +132,7 @@ function ChannelVuMeter({ channelId, isMuted }: { channelId: AudioChannel; isMut
       const pkGrad = ctx.createLinearGradient(0, H, 0, 0);
       pkGrad.addColorStop(0,    "#10b981");  // emerald-400
       pkGrad.addColorStop(0.65, "#fbbf24");  // amber-300
-      pkGrad.addColorStop(1,    "#ff5511");
+      pkGrad.addColorStop(1,    "#7C6AF2");
       ctx.fillStyle = pkGrad;
       ctx.beginPath();
       ctx.roundRect(0, H * (1 - peakPct), W, H * peakPct, W / 2);
@@ -141,7 +141,7 @@ function ChannelVuMeter({ channelId, isMuted }: { channelId: AudioChannel; isMut
       // Peak hold line
       if (holdPct > 0) {
         const y = H * (1 - holdPct);
-        ctx.strokeStyle = "rgba(255,255,255,0.7)";
+        ctx.strokeStyle = "rgba(236,234,251,0.8)";
         ctx.lineWidth = 1.5;
         ctx.beginPath();
         ctx.moveTo(0, y);
@@ -161,7 +161,7 @@ function ChannelVuMeter({ channelId, isMuted }: { channelId: AudioChannel; isMut
       ref={canvasRef}
       width={8}
       height={280}
-      className="rounded-full border-2 border-white/10 pointer-events-none"
+      className="rounded-full border-2 border-[#2B2942] pointer-events-none"
       style={{ width: 8, height: 280 }}
     />
   );
@@ -220,16 +220,16 @@ const ChannelStrip = memo(function ChannelStrip({
     <div
       className={`flex flex-col justify-between rounded-3xl border-2 p-5 min-h-[520px] transition-colors ${
         isMaster
-          ? "border-[#ff5511]/40 bg-[#23232a]"
-          : "border-white/10 bg-[#202026] hover:border-white/20"
+          ? "border-[#7C6AF2]/60 bg-[#1A172E] shadow-xl shadow-[#7C6AF2]/10"
+          : "border-[#2B2942] bg-[#171528] hover:border-[#3F3B5F]"
       }`}
     >
       {/* Header */}
       <div className="flex flex-col items-center text-center gap-1.5 pb-2">
-        <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#16161b] border-2 border-white/10 text-[#ff5511] mb-1">
+        <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#0F0E17] border-2 border-[#2B2942] text-[#7C6AF2] mb-1">
           <Icon className="h-5 w-5" />
         </div>
-        <h3 className="text-base font-bold text-white tracking-tight leading-tight">
+        <h3 className="text-base font-bold text-[#ECEAFB] tracking-tight leading-tight">
           {config.name}
         </h3>
       </div>
@@ -238,7 +238,7 @@ const ChannelStrip = memo(function ChannelStrip({
       <div className="flex flex-col items-center justify-center my-2 py-1">
         <span
           className={`text-2xl font-bold font-mono tracking-tight leading-none ${
-            isMuted ? "text-rose-400" : "text-white"
+            isMuted ? "text-rose-400" : "text-[#ECEAFB]"
           }`}
         >
           {isMuted ? "MUTED" : faderText}
@@ -248,7 +248,7 @@ const ChannelStrip = memo(function ChannelStrip({
       {/* Fader + VU meter */}
       <div className="relative flex-1 my-3 flex items-center justify-center gap-3 px-2 min-h-[290px]">
         {/* Scale */}
-        <div className="relative h-[280px] w-10 select-none font-mono text-[10px] text-zinc-400">
+        <div className="relative h-[280px] w-10 select-none font-mono text-[10px] text-[#ECEAFB]/50">
           {SCALE_MARKS.map((m) => {
             const pct = dbToFaderPct(m.db);
             return (
@@ -257,8 +257,8 @@ const ChannelStrip = memo(function ChannelStrip({
                 className="absolute right-1 flex items-center gap-1.5 -translate-y-1/2 pointer-events-none"
                 style={{ top: `${100 - pct}%` }}
               >
-                <span className={m.db === 0 ? "font-bold text-zinc-200" : ""}>{m.label}</span>
-                <div className={`h-[1.5px] ${m.db === 0 ? "w-2.5 bg-zinc-300" : "w-1.5 bg-zinc-600"}`} />
+                <span className={m.db === 0 ? "font-bold text-[#ECEAFB]" : ""}>{m.label}</span>
+                <div className={`h-[1.5px] ${m.db === 0 ? "w-2.5 bg-[#C4B5FD]" : "w-1.5 bg-[#2B2942]"}`} />
               </div>
             );
           })}
@@ -277,10 +277,10 @@ const ChannelStrip = memo(function ChannelStrip({
             title={`${config.name}: ${faderText} (drag to adjust, double-click for 0 dB)`}
           >
             {/* Groove */}
-            <div className="relative w-2.5 h-[280px] rounded-full bg-[#16161b] border-2 border-white/10 pointer-events-none overflow-hidden">
+            <div className="relative w-2.5 h-[280px] rounded-full bg-[#0F0E17] border-2 border-[#2B2942] pointer-events-none overflow-hidden">
               <div
                 className={`absolute bottom-0 w-full rounded-full transition-colors ${
-                  isMuted ? "bg-zinc-600" : "bg-[#ff5511]"
+                  isMuted ? "bg-zinc-600" : "bg-[#7C6AF2]"
                 }`}
                 style={{ height: `${faderPct}%` }}
               />
@@ -288,7 +288,7 @@ const ChannelStrip = memo(function ChannelStrip({
             {/* Thumb */}
             <div
               className={`pointer-events-none absolute h-5 w-5 rounded-full border-2 transition-colors z-10 ${
-                isMuted ? "bg-zinc-400 border-zinc-500" : "bg-white border-zinc-200"
+                isMuted ? "bg-zinc-500 border-zinc-600" : "bg-[#C4B5FD] border-[#ECEAFB] shadow-md shadow-[#7C6AF2]/30"
               }`}
               style={{
                 left: "50%",
@@ -315,7 +315,7 @@ const ChannelStrip = memo(function ChannelStrip({
         className={`w-full flex items-center justify-center gap-2 rounded-full py-3 px-4 text-xs font-semibold tracking-wider transition-colors cursor-pointer border-2 ${
           isMuted
             ? "bg-rose-500/20 border-rose-500 text-rose-300 animate-pulse"
-            : "border-white/10 bg-[#282830] hover:bg-[#32323c] hover:border-white/20 text-zinc-200 hover:text-white"
+            : "border-[#2B2942] bg-[#201D36] hover:bg-[#282444] hover:border-[#3F3B5F] text-[#ECEAFB]"
         }`}
       >
         {isMuted ? (
@@ -325,7 +325,7 @@ const ChannelStrip = memo(function ChannelStrip({
           </>
         ) : (
           <>
-            <Volume2 className="h-4 w-4 text-zinc-400" />
+            <Volume2 className="h-4 w-4 text-[#ECEAFB]/60" />
             <span>Mute</span>
           </>
         )}
@@ -345,11 +345,11 @@ export function MixerPanel() {
   return (
     <div className="flex flex-col gap-6 w-full max-w-7xl mx-auto select-none">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold tracking-tight text-white font-sans">Mixer</h1>
+        <h1 className="text-xl font-bold tracking-tight text-[#ECEAFB] font-sans">Mixer</h1>
         <button
           type="button"
           onClick={resetAllFaders}
-          className="rounded-xl border-2 border-white/10 bg-[#25252c] hover:bg-[#2e2e36] hover:border-white/20 hover:text-white px-3.5 py-1.5 text-xs font-mono text-zinc-200 transition-colors cursor-pointer"
+          className="rounded-xl border-2 border-[#2B2942] bg-[#171528] hover:bg-[#201D36] hover:border-[#3F3B5F] hover:text-white px-3.5 py-1.5 text-xs font-mono text-[#ECEAFB]/80 transition-colors cursor-pointer"
         >
           Reset Flat (0.0 dB)
         </button>

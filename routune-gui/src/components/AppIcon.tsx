@@ -197,14 +197,14 @@ export function AppIcon({ name, iconName = "", className = "h-5 w-5" }: AppIconP
   if (query.includes("system") || query.includes("sound") || query.includes("alsa")) {
     return (
       <svg viewBox="0 0 24 24" fill="none" className={className}>
-        <rect width="24" height="24" rx="6" fill="#2d3139" />
+        <rect width="24" height="24" rx="6" fill="#171528" stroke="#2B2942" strokeWidth="1" />
         <path
           d="M7 10V14H10L14 18V6L10 10H7Z"
-          fill="#ff5511"
+          fill="#7C6AF2"
         />
         <path
           d="M16.5 8.5C17.5 9.5 18 10.7 18 12C18 13.3 17.5 14.5 16.5 15.5"
-          stroke="#ff5511"
+          stroke="#C4B5FD"
           strokeWidth="1.5"
           strokeLinecap="round"
         />
@@ -216,11 +216,11 @@ export function AppIcon({ name, iconName = "", className = "h-5 w-5" }: AppIconP
   const initial = (name.trim().charAt(0) || "A").toUpperCase();
 
   return (
-    <div className={`relative flex items-center justify-center rounded-lg bg-[#272730] border border-white/10 ${className}`}>
-      <span className="text-[11px] font-bold text-zinc-200 select-none font-mono">
+    <div className={`relative flex items-center justify-center rounded-lg bg-[#171528] border border-[#2B2942] ${className}`}>
+      <span className="text-[11px] font-bold text-[#ECEAFB] select-none font-mono">
         {initial}
       </span>
-      <Volume2 className="absolute bottom-0.5 right-0.5 h-2 w-2 text-zinc-400 opacity-70" />
+      <Volume2 className="absolute bottom-0.5 right-0.5 h-2 w-2 text-[#ECEAFB]/60 opacity-70" />
     </div>
   );
 }
