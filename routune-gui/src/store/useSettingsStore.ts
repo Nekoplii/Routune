@@ -17,6 +17,7 @@ export interface SettingsState {
   runOnStartup: boolean;
   startMinimized: boolean;
   closeToTray: boolean;
+  autoCheckUpdates: boolean;
 
   // Audio Engine
   latencyMode: LatencyMode;
@@ -28,6 +29,7 @@ export interface SettingsState {
   setRunOnStartup: (val: boolean) => void;
   setStartMinimized: (val: boolean) => void;
   setCloseToTray: (val: boolean) => void;
+  setAutoCheckUpdates: (val: boolean) => void;
   setLatencyMode: (val: LatencyMode) => void;
   setShortcut: (key: keyof GlobalShortcuts, shortcut: string) => void;
   resetSettings: () => void;
@@ -37,6 +39,7 @@ const DEFAULT_SETTINGS = {
   runOnStartup: false,
   startMinimized: false,
   closeToTray: true,
+  autoCheckUpdates: true,
   latencyMode: "balanced" as LatencyMode,
   shortcuts: {
     muteMic: "Ctrl+M",
@@ -56,6 +59,7 @@ export const useSettingsStore = create<SettingsState>()(
       setRunOnStartup: (runOnStartup) => set({ runOnStartup }),
       setStartMinimized: (startMinimized) => set({ startMinimized }),
       setCloseToTray: (closeToTray) => set({ closeToTray }),
+      setAutoCheckUpdates: (autoCheckUpdates) => set({ autoCheckUpdates }),
       setLatencyMode: (latencyMode) => set({ latencyMode }),
       setShortcut: (key, shortcut) =>
         set((state) => ({

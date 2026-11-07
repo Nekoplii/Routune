@@ -17,7 +17,9 @@ import {
   Radio,
   Info,
   RefreshCw,
+  Sparkles,
 } from "lucide-react";
+import { getVersion } from "@tauri-apps/api/app";
 import {
   useSettingsStore,
   type GlobalShortcuts,
@@ -25,6 +27,8 @@ import {
 import { useShortcutStatus } from "../hooks/useGlobalShortcuts";
 import { useAudioStore } from "../store/useAudioStore";
 import { routuneClient } from "../services/grpcClient";
+import { checkForUpdates, ReleaseInfo } from "../services/updateService";
+import { UpdateModal } from "./UpdateModal";
 import {
   enable as enableAutostart,
   disable as disableAutostart,
@@ -145,11 +149,13 @@ export function Settings() {
     runOnStartup,
     startMinimized,
     closeToTray,
+    autoCheckUpdates,
     latencyMode,
     shortcuts,
     setRunOnStartup,
     setStartMinimized,
     setCloseToTray,
+    setAutoCheckUpdates,
     setLatencyMode,
     setShortcut,
     resetSettings,
@@ -160,7 +166,37 @@ export function Settings() {
   const [feedbackMsg, setFeedbackMsg] = useState<string | null>(null);
   const [isRestarting, setIsRestarting] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
+  const [currentVersion, setCurrentVersion] = useState<string>(
+    import.meta.env.VITE_APP_VERSION || "dev"
+  );
+  const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
+  const [updateRelease, setUpdateRelease] = useState<ReleaseInfo | null>(null);
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Sync version on mount
+  useEffect(() => {
+    getVersion()
+      .then((v) => { if (v) setCurrentVersion(v); })
+      .catch(() => {});
+  }, []);
+
+  const handleManualCheckUpdate = async () => {
+    setIsCheckingUpdate(true);
+    try {
+      const release = await checkForUpdates(currentVersion);
+      if (release) {
+        setUpdateRelease(release);
+        setShowUpdateModal(true);
+      } else {
+        flash("Routune is up to date!");
+      }
+    } catch {
+      flash("Failed to check for updates.");
+    } finally {
+      setIsCheckingUpdate(false);
+    }
+  };
 
   // Sync autostart state with Tauri plugin on mount
   useEffect(() => {
@@ -410,8 +446,40 @@ export function Settings() {
             description="Closing the window hides the GUI to background while preserving uninterrupted audio routing."
             checked={closeToTray}
             onChange={setCloseToTray}
+          />
+          <ToggleRow
+            label="Check for updates on launch"
+            description="Automatically check GitHub Releases for new updates when Routune starts."
+            checked={autoCheckUpdates}
+            onChange={setAutoCheckUpdates}
             divider={false}
           />
+        </div>
+      </SectionCard>
+
+      {/* ── 2. Software Updates ────────────────────────────────────────────── */}
+      <SectionCard
+        icon={<Sparkles className="h-5 w-5" />}
+        title="Software Updates"
+        subtitle="Version checks · One-click updater"
+      >
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex flex-col">
+            <span className="text-sm font-medium text-white">Routune Studio Release</span>
+            <span className="text-xs text-zinc-400 mt-0.5">
+              Current version installed: <span className="font-mono text-[#C4B5FD] font-semibold">{currentVersion.startsWith("v") ? currentVersion : `v${currentVersion}`}</span>
+            </span>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleManualCheckUpdate}
+            disabled={isCheckingUpdate}
+            className="flex items-center gap-2 rounded-xl border border-[#7C6AF2]/40 bg-[#7C6AF2]/15 hover:bg-[#7C6AF2]/25 px-4 py-2 text-xs font-semibold text-[#C4B5FD] hover:text-white transition-all cursor-pointer disabled:opacity-50"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${isCheckingUpdate ? "animate-spin" : ""}`} />
+            <span>{isCheckingUpdate ? "Checking..." : "Check for Updates"}</span>
+          </button>
         </div>
       </SectionCard>
 
@@ -626,6 +694,14 @@ export function Settings() {
           </button>
         </div>
       </SectionCard>
+
+      {/* In-App Update Modal */}
+      <UpdateModal
+        isOpen={showUpdateModal}
+        onClose={() => setShowUpdateModal(false)}
+        release={updateRelease}
+        currentVersion={currentVersion}
+      />
     </div>
   );
 }

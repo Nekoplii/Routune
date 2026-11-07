@@ -40,6 +40,60 @@ fn get_platform() -> &'static str {
     }
 }
 
+#[tauri::command]
+fn open_external_url(url: String) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(&url)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(&url)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("cmd")
+            .args(["/C", "start", "", &url])
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+}
+
+#[tauri::command]
+async fn run_in_app_update() -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let output = std::process::Command::new("bash")
+            .arg("-c")
+            .arg("curl -fsSL https://raw.githubusercontent.com/Nekoplii/Routune/main/install.sh | bash")
+            .output()
+            .map_err(|e| format!("Failed to spawn updater: {}", e))?;
+
+        if output.status.success() {
+            Ok("Routune updated successfully!".to_string())
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            Err(format!("Update failed: {}{}", stdout, stderr))
+        }
+    })
+    .await
+    .map_err(|e| format!("Updater task error: {}", e))?
+}
+
+#[tauri::command]
+fn restart_app(app_handle: tauri::AppHandle) {
+    app_handle.restart();
+}
+
 fn resolve_icon_path(name: &str) -> Option<std::path::PathBuf> {
     if name.is_empty() {
         return None;
@@ -396,7 +450,10 @@ pub fn run() {
             app_is_maximized,
             get_platform,
             get_app_icon,
-            sync_hyprland_shortcuts
+            sync_hyprland_shortcuts,
+            open_external_url,
+            run_in_app_update,
+            restart_app
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

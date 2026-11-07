@@ -5,8 +5,11 @@ import {
   Copy,
   Cpu,
   Server,
+  RefreshCw,
 } from "lucide-react";
 import { useAudioStore } from "../store/useAudioStore";
+import { checkForUpdates, ReleaseInfo } from "../services/updateService";
+import { UpdateModal } from "./UpdateModal";
 
 export function AboutView() {
   const status = useAudioStore((s) => s.connectionStatus);
@@ -22,6 +25,10 @@ export function AboutView() {
   const [version, setVersion] = useState<string>(
     import.meta.env.VITE_APP_VERSION || "dev"
   );
+  const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
+  const [updateRelease, setUpdateRelease] = useState<ReleaseInfo | null>(null);
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
+  const [updateFeedback, setUpdateFeedback] = useState<string | null>(null);
 
   useEffect(() => {
     getVersion()
@@ -32,6 +39,26 @@ export function AboutView() {
         // Web preview or dev fallback
       });
   }, []);
+
+  const handleCheckUpdate = async () => {
+    setIsCheckingUpdate(true);
+    setUpdateFeedback(null);
+    try {
+      const release = await checkForUpdates(version);
+      if (release) {
+        setUpdateRelease(release);
+        setShowUpdateModal(true);
+      } else {
+        setUpdateFeedback("Routune is up to date!");
+        setTimeout(() => setUpdateFeedback(null), 3000);
+      }
+    } catch {
+      setUpdateFeedback("Failed to check updates");
+      setTimeout(() => setUpdateFeedback(null), 3000);
+    } finally {
+      setIsCheckingUpdate(false);
+    }
+  };
 
   const displayVersion =
     version === "0.0.0-dev" || version === "dev"
@@ -187,30 +214,51 @@ export function AboutView() {
 
         {/* Action Controls & Footer */}
         <div className="flex flex-col sm:flex-row items-center justify-between gap-3 w-full mt-6">
-          <button
-            type="button"
-            onClick={handleCopyDiagnostics}
-            className="w-full sm:w-auto flex items-center justify-center gap-2 rounded-xl border-2 border-[#2B2942] bg-[#0F0E17] hover:bg-[#201D36] hover:border-[#3F3B5F] px-4 py-2 text-xs font-semibold text-[#ECEAFB]/80 hover:text-white transition-all cursor-pointer"
-            title="Copy system and audio engine diagnostics to clipboard"
-          >
-            {copied ? (
-              <>
-                <Check className="h-3.5 w-3.5 text-emerald-400" />
-                <span className="text-emerald-300">Diagnostics Copied</span>
-              </>
-            ) : (
-              <>
-                <Copy className="h-3.5 w-3.5 text-[#ECEAFB]/60" />
-                <span>Copy Diagnostics</span>
-              </>
-            )}
-          </button>
+          <div className="flex items-center gap-2.5 w-full sm:w-auto">
+            <button
+              type="button"
+              onClick={handleCopyDiagnostics}
+              className="flex-1 sm:flex-initial flex items-center justify-center gap-2 rounded-xl border-2 border-[#2B2942] bg-[#0F0E17] hover:bg-[#201D36] hover:border-[#3F3B5F] px-4 py-2 text-xs font-semibold text-[#ECEAFB]/80 hover:text-white transition-all cursor-pointer"
+              title="Copy system and audio engine diagnostics to clipboard"
+            >
+              {copied ? (
+                <>
+                  <Check className="h-3.5 w-3.5 text-emerald-400" />
+                  <span className="text-emerald-300">Diagnostics Copied</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="h-3.5 w-3.5 text-[#ECEAFB]/60" />
+                  <span>Copy Diagnostics</span>
+                </>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={handleCheckUpdate}
+              disabled={isCheckingUpdate}
+              className="flex-1 sm:flex-initial flex items-center justify-center gap-2 rounded-xl border border-[#7C6AF2]/40 bg-[#7C6AF2]/15 hover:bg-[#7C6AF2]/25 px-4 py-2 text-xs font-semibold text-[#C4B5FD] hover:text-white transition-all cursor-pointer disabled:opacity-50"
+              title="Check GitHub Releases for new updates"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${isCheckingUpdate ? "animate-spin" : ""}`} />
+              <span>{isCheckingUpdate ? "Checking..." : updateFeedback || "Check Updates"}</span>
+            </button>
+          </div>
 
           <span className="text-[11px] text-[#ECEAFB]/50 font-mono text-center sm:text-right">
             Built with Rust, Tauri & PipeWire
           </span>
         </div>
       </div>
+
+      {/* In-App Update Modal */}
+      <UpdateModal
+        isOpen={showUpdateModal}
+        onClose={() => setShowUpdateModal(false)}
+        release={updateRelease}
+        currentVersion={version}
+      />
     </div>
   );
 }
