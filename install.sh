@@ -183,10 +183,8 @@ if [ "$LOCAL_SOURCE" = false ]; then
 
     tar -xzf "${TEMP_DIR}/routune.tar.gz" -C "$TEMP_DIR"
 
-    EXTRACTED_DIR=$(find "$TEMP_DIR" -maxdepth 1 -type d -name "routune*" | head -n 1)
-    if [ -n "$EXTRACTED_DIR" ] && [ -f "${EXTRACTED_DIR}/routune-daemon" ]; then
-        SRC_DIR="$EXTRACTED_DIR"
-    else
+    SRC_DIR="$(find "$TEMP_DIR" -type f -name "routune-daemon" -exec dirname {} \; 2>/dev/null | head -n 1)"
+    if [ -z "$SRC_DIR" ]; then
         SRC_DIR="$TEMP_DIR"
     fi
 
