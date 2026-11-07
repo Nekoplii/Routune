@@ -1,6 +1,34 @@
-# Routune
+<div align="center">
+  <img src="docs/logo.png" alt="Routune Logo" width="128" height="128" />
+  <h1>Routune</h1>
+  <p><strong>Universal Audio Routing &amp; DSP Engine for Linux</strong></p>
+  <p>Real-time PipeWire node routing, neural noise suppression, parametric EQ, and virtual microphone management.</p>
+</div>
 
-Audio routing and DSP daemon for Linux. The daemon manages all hardware I/O and runs DSP on real-time threads. The Tauri GUI is a control client that communicates over gRPC IPC and can be closed without interrupting routing.
+---
+
+## Overview
+
+### Multi-Channel Mixer
+Master and per-channel volume faders, real-time dBFS peak/RMS metering, and quick mute controls across all virtual sinks.
+
+<p align="center">
+  <img src="docs/screenshots/mixer.png" alt="Routune Mixer View" width="100%" />
+</p>
+
+### PipeWire App & Hardware Routing
+Per-application channel assignment (`Game`, `Chat`, `Media`, `Aux`), live stream discovery, hardware output redirection, and isolated virtual microphone bridging.
+
+<p align="center">
+  <img src="docs/screenshots/routing.png" alt="Routune Routing View" width="100%" />
+</p>
+
+### Parametric EQ & DSP Tuning
+Interactive 10-band biquad equalizer with curve visualization and presets, binaural 3D spatial audio, and soft-limiting volume boost.
+
+<p align="center">
+  <img src="docs/screenshots/tuning.png" alt="Routune Tuning View" width="100%" />
+</p>
 
 ---
 
