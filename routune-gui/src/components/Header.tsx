@@ -125,7 +125,7 @@ export function Header() {
     <header
       data-tauri-drag-region
       onDoubleClick={handleHeaderDoubleClick}
-      className="flex h-9 shrink-0 items-center justify-between border-b-2 border-white/10 bg-[#19191e] select-none cursor-default z-50"
+      className="flex h-9 shrink-0 items-center justify-between border-b-2 border-[#2B2942] bg-[#171528] select-none cursor-default z-50"
     >
       {/* LEFT SECTION */}
       {os === "macos" ? (
@@ -173,8 +173,9 @@ export function Header() {
         /* Windows & Linux Left Brand Title */
         <div
           data-tauri-drag-region
-          className="flex items-center gap-2 pl-4 text-xs font-semibold text-zinc-400 select-none h-full"
+          className="flex items-center gap-2 pl-3 text-xs font-semibold text-[#ECEAFB]/80 select-none h-full"
         >
+          <img src="/logo.svg" alt="" className="h-4 w-4 object-contain pointer-events-none" />
           <span data-tauri-drag-region className="tracking-wide">
             Routune Studio
           </span>
@@ -187,12 +188,15 @@ export function Header() {
         className="flex-1 h-full flex items-center justify-center"
       >
         {os === "macos" && (
-          <span
-            data-tauri-drag-region
-            className="text-[11px] font-semibold text-zinc-400/80 tracking-wide select-none pointer-events-none"
-          >
-            Routune Studio
-          </span>
+          <div data-tauri-drag-region className="flex items-center gap-1.5 select-none pointer-events-none">
+            <img src="/logo.svg" alt="" className="h-3.5 w-3.5 object-contain" />
+            <span
+              data-tauri-drag-region
+              className="text-[11px] font-semibold text-[#ECEAFB]/80 tracking-wide"
+            >
+              Routune Studio
+            </span>
+          </div>
         )}
       </div>
 
@@ -210,7 +214,7 @@ export function Header() {
           <button
             type="button"
             onClick={handleMinimize}
-            className="flex h-full w-11 items-center justify-center text-zinc-400 hover:bg-white/10 active:bg-white/15 hover:text-white transition-colors cursor-pointer"
+            className="flex h-full w-11 items-center justify-center text-[#ECEAFB]/70 hover:bg-[#2B2942] active:bg-[#3F3B5F] hover:text-[#ECEAFB] transition-colors cursor-pointer"
             title="Minimize"
             aria-label="Minimize"
           >
@@ -222,7 +226,7 @@ export function Header() {
           <button
             type="button"
             onClick={handleToggleMaximize}
-            className="flex h-full w-11 items-center justify-center text-zinc-400 hover:bg-white/10 active:bg-white/15 hover:text-white transition-colors cursor-pointer"
+            className="flex h-full w-11 items-center justify-center text-[#ECEAFB]/70 hover:bg-[#2B2942] active:bg-[#3F3B5F] hover:text-[#ECEAFB] transition-colors cursor-pointer"
             title={isMaximized ? "Restore" : "Maximize"}
             aria-label={isMaximized ? "Restore" : "Maximize"}
           >
@@ -255,7 +259,7 @@ export function Header() {
           <button
             type="button"
             onClick={handleClose}
-            className="flex h-full w-11 items-center justify-center text-zinc-400 hover:bg-[#c42b1c] active:bg-[#b82618] hover:text-white transition-colors cursor-pointer"
+            className="flex h-full w-11 items-center justify-center text-[#ECEAFB]/70 hover:bg-[#c42b1c] active:bg-[#b82618] hover:text-white transition-colors cursor-pointer"
             title="Close"
             aria-label="Close"
           >

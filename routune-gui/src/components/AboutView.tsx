@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import {
-  AudioWaveform,
   Check,
   Copy,
   Cpu,
@@ -67,12 +66,12 @@ export function AboutView() {
   return (
     <div className="flex flex-col items-center justify-center w-full max-w-2xl mx-auto py-2 sm:py-4 select-none">
       {/* Native Desktop App Card */}
-      <div className="w-full flex flex-col items-center rounded-3xl border-2 border-white/10 bg-[#202026] p-6 sm:p-8 shadow-2xl shadow-black/40">
+      <div className="w-full flex flex-col items-center rounded-3xl border-2 border-[#2B2942] bg-[#171528] p-6 sm:p-8 shadow-2xl shadow-black/40">
         {/* App Hero / Icon Squircle */}
         <div className="flex flex-col items-center text-center gap-3 mb-6">
-          <div className="relative flex h-20 w-20 items-center justify-center rounded-3xl bg-gradient-to-br from-[#ff5511]/25 to-[#ff5511]/5 border-2 border-[#ff5511]/40 text-[#ff5511] shadow-xl shadow-[#ff5511]/15">
-            <AudioWaveform className="h-10 w-10 text-[#ff5511]" />
-            <div className="absolute -bottom-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full bg-[#16161b] border-2 border-white/10">
+          <div className="relative flex h-24 w-24 items-center justify-center rounded-3xl bg-gradient-to-br from-[#7C6AF2]/25 to-[#7C6AF2]/5 border-2 border-[#7C6AF2]/40 text-[#7C6AF2] shadow-xl shadow-[#7C6AF2]/20 p-2">
+            <img src="/logo.svg" alt="Routune" className="h-full w-full object-contain pointer-events-none" />
+            <div className="absolute -bottom-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full bg-[#171528] border-2 border-[#2B2942]">
               <span className="relative flex h-2.5 w-2.5">
                 {status === "connected" ? (
                   <>
@@ -89,14 +88,14 @@ export function AboutView() {
           </div>
 
           <div className="flex flex-col items-center gap-1">
-            <h1 className="text-2xl font-bold tracking-tight text-white font-sans">
+            <h1 className="text-2xl font-bold tracking-tight text-[#ECEAFB] font-sans">
               Routune Studio
             </h1>
             <div className="flex items-center gap-2">
-              <span className="rounded-full border border-[#ff5511]/40 bg-[#ff5511]/10 px-3 py-0.5 text-xs font-mono font-semibold text-[#ff5511]">
+              <span className="rounded-full border border-[#7C6AF2]/40 bg-[#7C6AF2]/10 px-3 py-0.5 text-xs font-mono font-semibold text-[#C4B5FD]">
                 {displayVersion}
               </span>
-              <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-[11px] font-mono text-zinc-400">
+              <span className="rounded-full border border-[#2B2942] bg-white/5 px-2.5 py-0.5 text-[11px] font-mono text-[#ECEAFB]/60">
                 Linux (x86_64)
               </span>
             </div>
@@ -106,14 +105,14 @@ export function AboutView() {
         {/* Grouped Desktop Inset Lists */}
         <div className="flex flex-col gap-4 w-full">
           {/* Audio Engine Inset Group */}
-          <div className="flex flex-col rounded-2xl border-2 border-white/10 bg-[#16161b] overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-2.5 border-b border-white/5 bg-white/[0.02]">
-              <div className="flex items-center gap-2 text-xs font-bold text-white uppercase tracking-wider font-mono">
-                <Server className="h-3.5 w-3.5 text-[#ff5511]" />
+          <div className="flex flex-col rounded-2xl border-2 border-[#2B2942] bg-[#0F0E17] overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-2.5 border-b border-[#2B2942] bg-white/[0.02]">
+              <div className="flex items-center gap-2 text-xs font-bold text-[#ECEAFB] uppercase tracking-wider font-mono">
+                <Server className="h-3.5 w-3.5 text-[#7C6AF2]" />
                 <span>Audio Engine</span>
               </div>
               <div className="flex items-center gap-1.5 text-[11px] font-mono">
-                <span className="text-zinc-500">DAEMON:</span>
+                <span className="text-[#ECEAFB]/50">DAEMON:</span>
                 <span
                   className={
                     status === "connected"
@@ -128,24 +127,24 @@ export function AboutView() {
               </div>
             </div>
 
-            <div className="divide-y divide-white/5 text-xs font-mono">
+            <div className="divide-y divide-[#2B2942]/60 text-xs font-mono">
               <div className="flex items-center justify-between px-4 py-2.5">
-                <span className="text-zinc-400">PipeWire Server</span>
-                <span className="text-zinc-200 font-medium">1.0+ (Pulse / JACK / ALSA)</span>
+                <span className="text-[#ECEAFB]/60">PipeWire Server</span>
+                <span className="text-[#ECEAFB] font-medium">1.0+ (Pulse / JACK / ALSA)</span>
               </div>
               <div className="flex items-center justify-between px-4 py-2.5">
-                <span className="text-zinc-400">DSP Processing</span>
-                <span className="text-zinc-200 font-medium">48 kHz · 32-bit Float · 10-Band EQ</span>
+                <span className="text-[#ECEAFB]/60">DSP Processing</span>
+                <span className="text-[#ECEAFB] font-medium">48 kHz · 32-bit Float · 10-Band EQ</span>
               </div>
               <div className="flex items-center justify-between px-4 py-2.5">
-                <span className="text-zinc-400">IPC Telemetry Latency</span>
-                <span className="text-[#ff5511] font-semibold">
+                <span className="text-[#ECEAFB]/60">IPC Telemetry Latency</span>
+                <span className="text-[#C4B5FD] font-semibold">
                   {status === "connected" ? `${latency} ms` : "---"}
                 </span>
               </div>
               <div className="flex items-center justify-between px-4 py-2.5">
-                <span className="text-zinc-400">Active Levels (Peak / RMS)</span>
-                <span className="text-zinc-200 font-medium">
+                <span className="text-[#ECEAFB]/60">Active Levels (Peak / RMS)</span>
+                <span className="text-[#ECEAFB] font-medium">
                   {status === "connected" ? `${peakDb.toFixed(1)} dB / ${rmsDb.toFixed(1)} dB` : "-∞ dB"}
                 </span>
               </div>
@@ -153,34 +152,34 @@ export function AboutView() {
           </div>
 
           {/* System & Architecture Inset Group */}
-          <div className="flex flex-col rounded-2xl border-2 border-white/10 bg-[#16161b] overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-2.5 border-b border-white/5 bg-white/[0.02]">
-              <div className="flex items-center gap-2 text-xs font-bold text-white uppercase tracking-wider font-mono">
-                <Cpu className="h-3.5 w-3.5 text-[#ff5511]" />
+          <div className="flex flex-col rounded-2xl border-2 border-[#2B2942] bg-[#0F0E17] overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-2.5 border-b border-[#2B2942] bg-white/[0.02]">
+              <div className="flex items-center gap-2 text-xs font-bold text-[#ECEAFB] uppercase tracking-wider font-mono">
+                <Cpu className="h-3.5 w-3.5 text-[#7C6AF2]" />
                 <span>Architecture</span>
               </div>
               <div className="flex items-center gap-1.5 text-[11px] font-mono">
-                <span className="text-zinc-500">LICENSE:</span>
-                <span className="text-zinc-300 font-medium">GPL-3.0</span>
+                <span className="text-[#ECEAFB]/50">LICENSE:</span>
+                <span className="text-[#ECEAFB]/80 font-medium">GPL-3.0</span>
               </div>
             </div>
 
-            <div className="divide-y divide-white/5 text-xs font-mono">
+            <div className="divide-y divide-[#2B2942]/60 text-xs font-mono">
               <div className="flex items-center justify-between px-4 py-2.5">
-                <span className="text-zinc-400">Desktop Runtime</span>
-                <span className="text-zinc-200 font-medium">Tauri v2 · Rust 2021 Edition</span>
+                <span className="text-[#ECEAFB]/60">Desktop Runtime</span>
+                <span className="text-[#ECEAFB] font-medium">Tauri v2 · Rust 2021 Edition</span>
               </div>
               <div className="flex items-center justify-between px-4 py-2.5">
-                <span className="text-zinc-400">Virtual Channels</span>
-                <span className="text-zinc-200 font-medium">Master, Media, Game, Chat, Aux, Mic</span>
+                <span className="text-[#ECEAFB]/60">Virtual Channels</span>
+                <span className="text-[#ECEAFB] font-medium">Master, Media, Game, Chat, Aux, Mic</span>
               </div>
               <div className="flex items-center justify-between px-4 py-2.5">
-                <span className="text-zinc-400">Active Audio Streams</span>
+                <span className="text-[#ECEAFB]/60">Active Audio Streams</span>
                 <span className="text-emerald-400 font-semibold">{activeApps.length} connected</span>
               </div>
               <div className="flex items-center justify-between px-4 py-2.5">
-                <span className="text-zinc-400">Hardware Output Sinks</span>
-                <span className="text-zinc-200 font-medium">{hardwareOutputs.length} available</span>
+                <span className="text-[#ECEAFB]/60">Hardware Output Sinks</span>
+                <span className="text-[#ECEAFB] font-medium">{hardwareOutputs.length} available</span>
               </div>
             </div>
           </div>
@@ -191,7 +190,7 @@ export function AboutView() {
           <button
             type="button"
             onClick={handleCopyDiagnostics}
-            className="w-full sm:w-auto flex items-center justify-center gap-2 rounded-xl border-2 border-white/10 bg-[#16161b] hover:bg-[#282830] hover:border-white/20 px-4 py-2 text-xs font-semibold text-zinc-300 hover:text-white transition-all cursor-pointer"
+            className="w-full sm:w-auto flex items-center justify-center gap-2 rounded-xl border-2 border-[#2B2942] bg-[#0F0E17] hover:bg-[#201D36] hover:border-[#3F3B5F] px-4 py-2 text-xs font-semibold text-[#ECEAFB]/80 hover:text-white transition-all cursor-pointer"
             title="Copy system and audio engine diagnostics to clipboard"
           >
             {copied ? (
@@ -201,13 +200,13 @@ export function AboutView() {
               </>
             ) : (
               <>
-                <Copy className="h-3.5 w-3.5 text-zinc-400" />
+                <Copy className="h-3.5 w-3.5 text-[#ECEAFB]/60" />
                 <span>Copy Diagnostics</span>
               </>
             )}
           </button>
 
-          <span className="text-[11px] text-zinc-500 font-mono text-center sm:text-right">
+          <span className="text-[11px] text-[#ECEAFB]/50 font-mono text-center sm:text-right">
             Built with Rust, Tauri & PipeWire
           </span>
         </div>
