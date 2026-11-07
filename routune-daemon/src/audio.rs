@@ -344,6 +344,8 @@ pub struct ChannelPusher {
     pub mic_rms: Arc<AtomicU32>,
     pub mic_noise_enabled: Arc<AtomicBool>,
     pub mic_test_enabled: Arc<AtomicBool>,
+    pub mic_muted: Arc<AtomicBool>,
+    pub mic_gain: Arc<AtomicU32>,
 }
 
 impl Default for ChannelPusher {
@@ -362,6 +364,8 @@ impl Default for ChannelPusher {
             mic_rms: Arc::new(AtomicU32::new((-100.0f32).to_bits())),
             mic_noise_enabled: Arc::new(AtomicBool::new(false)),
             mic_test_enabled: Arc::new(AtomicBool::new(false)),
+            mic_muted: Arc::new(AtomicBool::new(false)),
+            mic_gain: Arc::new(AtomicU32::new(1.0f32.to_bits())),
         }
     }
 }
@@ -1133,6 +1137,8 @@ impl ChannelRouter {
                     self.pusher.mic_rms.clone(),
                     route.is_active.clone(),
                     self.pusher.mic_noise_enabled.clone(),
+                    self.pusher.mic_muted.clone(),
+                    self.pusher.mic_gain.clone(),
                     err_fn,
                     self.pusher.mic_test_enabled.clone(),
                     self.pusher.mic_test.clone(),
@@ -2370,6 +2376,8 @@ fn build_channel_input_stream(
     rms_db: Arc<AtomicU32>,
     is_active: Arc<AtomicBool>,
     noise_enabled: Arc<AtomicBool>,
+    mic_muted: Arc<AtomicBool>,
+    mic_gain: Arc<AtomicU32>,
     err_fn: impl FnMut(cpal::StreamError) + Send + 'static,
     mic_test_enabled: Arc<AtomicBool>,
     mic_test_ring_buf: Arc<AudioRingBuffer>,
@@ -2384,6 +2392,8 @@ fn build_channel_input_stream(
     let resampler = LinearResampler::new(config.sample_rate.0, VIRTUAL_SINK_SAMPLE_RATE);
 
     let in_sample_rate = config.sample_rate.0.max(1) as u64;
+    let init_gain = f32::from_bits(mic_gain.load(Ordering::Relaxed));
+    let init_muted = mic_muted.load(Ordering::Relaxed);
 
     match sample_format {
         SampleFormat::F32 => {
@@ -2392,8 +2402,10 @@ fn build_channel_input_stream(
             let mut dsp_scratch = Box::new([0.0f32; 8192]);
             let mut eq_node = eq_node;
             let mut resampler = resampler;
-            let mut gain = 1.0f32;
-            let mut muted = false;
+            let mut gain = init_gain;
+            let mut muted = init_muted;
+            let mic_gain_cl = mic_gain.clone();
+            let mic_muted_cl = mic_muted.clone();
 
             device.build_input_stream(
                 config,
@@ -2444,9 +2456,11 @@ fn build_channel_input_stream(
                                 } else {
                                     10.0f32.powf(vol_db / 20.0)
                                 };
+                                mic_gain_cl.store(gain.to_bits(), Ordering::Relaxed);
                             }
                             GraphCommand::UpdateMute(_, m) => {
                                 muted = m;
+                                mic_muted_cl.store(m, Ordering::Relaxed);
                             }
                             _ => {}
                         }
@@ -2524,8 +2538,10 @@ fn build_channel_input_stream(
             let mut dsp_scratch = Box::new([0.0f32; 8192]);
             let mut eq_node = eq_node;
             let mut resampler = resampler;
-            let mut gain = 1.0f32;
-            let mut muted = false;
+            let mut gain = init_gain;
+            let mut muted = init_muted;
+            let mic_gain_cl = mic_gain.clone();
+            let mic_muted_cl = mic_muted.clone();
 
             device.build_input_stream(
                 config,
@@ -2576,9 +2592,11 @@ fn build_channel_input_stream(
                                 } else {
                                     10.0f32.powf(vol_db / 20.0)
                                 };
+                                mic_gain_cl.store(gain.to_bits(), Ordering::Relaxed);
                             }
                             GraphCommand::UpdateMute(_, m) => {
                                 muted = m;
+                                mic_muted_cl.store(m, Ordering::Relaxed);
                             }
                             _ => {}
                         }
@@ -2938,5 +2956,17 @@ mod tests {
         for &s in &out2[..written2] {
             assert!((s - 0.75).abs() < 1e-4, "Sample was {}", s);
         }
+    }
+
+    #[test]
+    fn test_channel_pusher_initial_mute_and_gain_state() {
+        let pusher = ChannelPusher::default();
+        assert!(!pusher.mic_muted.load(Ordering::Relaxed));
+        assert!((f32::from_bits(pusher.mic_gain.load(Ordering::Relaxed)) - 1.0f32).abs() < 1e-4);
+
+        pusher.mic_muted.store(true, Ordering::Relaxed);
+        pusher.mic_gain.store(0.0f32.to_bits(), Ordering::Relaxed);
+        assert!(pusher.mic_muted.load(Ordering::Relaxed));
+        assert_eq!(f32::from_bits(pusher.mic_gain.load(Ordering::Relaxed)), 0.0f32);
     }
 }

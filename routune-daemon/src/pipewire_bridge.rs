@@ -135,6 +135,8 @@ pub struct PipeWireBridgeService {
     pub desktop_rms: Arc<AtomicU32>,
     pub chat_noise_enabled: Arc<AtomicBool>,
     pub mic_noise_enabled: Arc<AtomicBool>,
+    pub mic_muted: Arc<AtomicBool>,
+    pub mic_gain: Arc<AtomicU32>,
 }
 
 impl PipeWireBridgeService {
@@ -169,8 +171,14 @@ impl PipeWireBridgeService {
 
         let chat_noise_enabled = Arc::new(AtomicBool::new(config.map(|c| c.get_noise_cancellation(VirtualChannel::Chat)).unwrap_or(false)));
         let mic_noise_enabled = pusher.mic_noise_enabled.clone();
+        let mic_muted = pusher.mic_muted.clone();
+        let mic_gain = pusher.mic_gain.clone();
         if let Some(cfg) = config {
             mic_noise_enabled.store(cfg.get_noise_cancellation(VirtualChannel::Mic), Ordering::Relaxed);
+            mic_muted.store(cfg.get_mute(VirtualChannel::Mic), Ordering::Relaxed);
+            let m_vol = cfg.get_volume(VirtualChannel::Mic);
+            let m_gain = if m_vol <= -48.0 { 0.0f32 } else { 10.0f32.powf(m_vol / 20.0) };
+            mic_gain.store(m_gain.to_bits(), Ordering::Relaxed);
         }
 
         let mic_cmd_tx = pusher.mic_cmd_tx.clone();
@@ -1126,6 +1134,8 @@ impl PipeWireBridgeService {
             desktop_rms,
             chat_noise_enabled,
             mic_noise_enabled,
+            mic_muted,
+            mic_gain,
         })
     }
 
@@ -1305,6 +1315,8 @@ impl PipeWireBridgeService {
                 let _ = self.aux_eq_tx.try_send(cmd);
             }
             VirtualChannel::Mic => {
+                let gain = if volume_db <= -48.0 { 0.0f32 } else { 10.0f32.powf(volume_db / 20.0) };
+                self.mic_gain.store(gain.to_bits(), Ordering::Relaxed);
                 let _ = self.mic_cmd_tx.try_send(cmd);
             }
             VirtualChannel::Master => {
@@ -1336,6 +1348,7 @@ impl PipeWireBridgeService {
                 let _ = self.aux_eq_tx.try_send(cmd);
             }
             VirtualChannel::Mic => {
+                self.mic_muted.store(muted, Ordering::Relaxed);
                 let _ = self.mic_cmd_tx.try_send(cmd);
             }
             VirtualChannel::Master => {

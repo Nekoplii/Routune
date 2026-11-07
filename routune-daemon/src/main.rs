@@ -44,11 +44,22 @@ async fn main() -> Result<()> {
     let (mut channel_router, pusher) = audio::ChannelRouter::new();
     let is_active = Arc::new(AtomicBool::new(false));
 
-    // Preload mic noise cancellation state from persisted config before mic capture stream builds
+    // Preload mic noise cancellation, mute, and gain from persisted config before mic capture stream builds
     pusher.mic_noise_enabled.store(
         initial_config.get_noise_cancellation(VirtualChannel::Mic),
         Ordering::Relaxed,
     );
+    pusher.mic_muted.store(
+        initial_config.get_mute(VirtualChannel::Mic),
+        Ordering::Relaxed,
+    );
+    let mic_vol = initial_config.get_volume(VirtualChannel::Mic);
+    let mic_gain = if mic_vol <= -48.0 {
+        0.0f32
+    } else {
+        10.0f32.powf(mic_vol / 20.0)
+    };
+    pusher.mic_gain.store(mic_gain.to_bits(), Ordering::Relaxed);
 
     // 2b. Initialize native virtual mic pipeline (native PipeWire source, CPAL DSP output stream, auto-link)
     #[cfg(target_os = "linux")]
@@ -140,6 +151,21 @@ async fn main() -> Result<()> {
             // Restore initial EQ for Mic
             for (band, gain) in initial_config.get_eq(VirtualChannel::Mic).iter().enumerate() {
                 let _ = arc_service.update_eq(VirtualChannel::Mic, band, *gain);
+            }
+
+            // Restore initial Volume and Mute across all channels
+            for ch in [
+                VirtualChannel::Master,
+                VirtualChannel::Game,
+                VirtualChannel::Chat,
+                VirtualChannel::Media,
+                VirtualChannel::Aux,
+                VirtualChannel::Mic,
+            ] {
+                let muted = initial_config.get_mute(ch);
+                let vol = initial_config.get_volume(ch);
+                let _ = arc_service.update_mute(ch, muted);
+                let _ = arc_service.update_volume(ch, vol);
             }
             (Some(arc_service.clone()), Some(arc_service as Arc<dyn TelemetryMetricsProvider>))
         }
